@@ -17,6 +17,7 @@ phases:
     commands:
       - echo "Starting build phase"
       - pnpm run build
+      - ls -la dist/
       
   post_build:
     commands:
@@ -24,13 +25,17 @@ phases:
       - cp package.json dist/
       - cp pnpm-lock.yaml dist/
       - cd dist && pnpm install --prod
+      - ls -la
 
 artifacts:
+  base-directory: .
   files:
     - dist/**/*
     - scripts/**/*
     - appspec.yml
-  discard-paths: no
+    - package.json
+    - pnpm-lock.yaml
+  discard-paths: false
 
 cache:
   paths:

@@ -3,9 +3,13 @@ os: linux
 
 files:
   - source: /dist
-    destination: /home/ec2-user/event-monitor
+    destination: /home/ec2-user/event-monitor/dist
   - source: /scripts
     destination: /home/ec2-user/event-monitor/scripts
+  - source: /package.json
+    destination: /home/ec2-user/event-monitor
+  - source: /pnpm-lock.yaml
+    destination: /home/ec2-user/event-monitor
 
 permissions:
   - object: /home/ec2-user/event-monitor
