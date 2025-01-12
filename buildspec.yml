@@ -6,7 +6,7 @@ phases:
       nodejs: 18
     commands:
       - npm install -g pnpm
-      - pnpm install
+      - pnpm install --no-frozen-lockfile
   
   pre_build:
     commands:
@@ -24,7 +24,7 @@ phases:
       - echo "Starting post-build phase"
       - cp package.json dist/
       - cp pnpm-lock.yaml dist/
-      - cd dist && pnpm install --prod
+      - cd dist && pnpm install --prod --no-frozen-lockfile
       - ls -la
 
 artifacts:

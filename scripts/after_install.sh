@@ -21,7 +21,8 @@ source ~/.bashrc
 # Install production dependencies
 echo "Installing dependencies..."
 rm -rf node_modules
-pnpm install --prod
+rm -f pnpm-lock.yaml  # Remove existing lock file
+pnpm install --prod --no-frozen-lockfile
 echo "Installed packages:"
 ls -la node_modules/.pnpm/
 echo "Checking for ws package:"
