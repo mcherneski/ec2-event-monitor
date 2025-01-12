@@ -138,12 +138,27 @@ export class EventListener {
     try {
       this.logger.info('Processing event', { event });
 
-      // Send to Kinesis
-      await this.kinesis.send(new PutRecordCommand({
+      // Log Kinesis configuration
+      this.logger.info('Kinesis configuration', {
+        streamName: this.config.kinesisStreamName,
+        region: this.kinesis.config.region()
+      });
+
+      const record = {
         StreamName: this.config.kinesisStreamName,
         PartitionKey: event.tokenId,
         Data: Buffer.from(JSON.stringify(event))
-      }));
+      };
+
+      this.logger.info('Sending record to Kinesis', { record });
+
+      // Send to Kinesis
+      const result = await this.kinesis.send(new PutRecordCommand(record));
+      
+      this.logger.info('Successfully sent to Kinesis', { 
+        sequenceNumber: result.SequenceNumber,
+        shardId: result.ShardId
+      });
 
       // Publish metrics
       await this.metrics.publishMetric({
@@ -156,7 +171,16 @@ export class EventListener {
         }
       });
     } catch (error) {
-      this.logger.error('Failed to process event', { error, event });
+      this.logger.error('Failed to process event', { 
+        error: error instanceof Error ? {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        } : error,
+        event,
+        kinesisStream: this.config.kinesisStreamName,
+        region: this.kinesis.config.region()
+      });
       throw error;
     }
   }
