@@ -4,8 +4,19 @@ set -e  # Exit on error
 # Install Node.js if not already installed
 if ! command -v node &> /dev/null; then
     echo "Installing Node.js..."
-    # Install Node.js using dnf on Amazon Linux 2023
-    dnf install -y nodejs
+    
+    # Check which package manager is available
+    if command -v dnf &> /dev/null; then
+        echo "Using dnf package manager..."
+        dnf install -y nodejs
+    elif command -v yum &> /dev/null; then
+        echo "Using yum package manager..."
+        curl -sL https://rpm.nodesource.com/setup_18.x | bash -
+        yum install -y nodejs
+    else
+        echo "No supported package manager found"
+        exit 1
+    fi
 
     # Create symlink if needed
     if [ ! -f "/usr/bin/node" ] && [ -f "/usr/local/bin/node" ]; then
