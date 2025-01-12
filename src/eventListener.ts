@@ -1,4 +1,5 @@
 import { WebSocketProvider, Contract, EventLog } from 'ethers';
+import WebSocket from 'ws';
 import { KinesisClient, PutRecordCommand } from '@aws-sdk/client-kinesis';
 import type { Config } from './types/config.js';
 import type { OnChainEvent } from './types/events.js';
@@ -26,11 +27,40 @@ export class EventListener {
   constructor(config: Config) {
     this.config = config;
     this.logger = new Logger('EventListener');
-    this.provider = new WebSocketProvider(config.wsRpcUrl);
-    this.nftContract = new Contract(config.nftContractAddress, EVENT_ABIS, this.provider);
-    this.stakingContract = new Contract(config.stakingContractAddress, EVENT_ABIS, this.provider);
-    this.kinesis = new KinesisClient({ region: config.awsRegion });
-    this.metrics = new MetricsPublisher(config.awsRegion, 'NGU/BlockchainEvents');
+    
+    try {
+      this.logger.info('Attempting to connect to WebSocket provider', { url: config.wsRpcUrl });
+      
+      const wsCreator = () => {
+        const ws = new WebSocket(config.wsRpcUrl, {
+          handshakeTimeout: 5000,
+          maxPayload: 100 * 1024 * 1024 // 100MB
+        });
+        
+        ws.onopen = () => {
+          this.logger.info('WebSocket connection established successfully');
+        };
+        
+        ws.onerror = (error: WebSocket.ErrorEvent) => {
+          this.logger.error('WebSocket connection error in constructor', { error });
+        };
+        
+        return ws;
+      };
+      
+      this.provider = new WebSocketProvider(wsCreator, "base-sepolia", {
+        staticNetwork: true,
+        batchMaxCount: 1
+      });
+      
+      this.nftContract = new Contract(config.nftContractAddress, EVENT_ABIS, this.provider);
+      this.stakingContract = new Contract(config.stakingContractAddress, EVENT_ABIS, this.provider);
+      this.kinesis = new KinesisClient({ region: config.awsRegion });
+      this.metrics = new MetricsPublisher(config.awsRegion, 'NGU/BlockchainEvents');
+    } catch (error) {
+      this.logger.error('Failed to initialize WebSocket provider', { error });
+      throw error;
+    }
   }
 
   async start() {
@@ -132,22 +162,37 @@ export class EventListener {
   }
 
   private async monitorConnection() {
-    this.provider.on('error', async (error) => {
-      this.logger.error('WebSocket connection error', error);
+    const ws = this.provider.websocket as WebSocket;
+    
+    ws.onerror = async (error: WebSocket.ErrorEvent) => {
+      this.logger.error('WebSocket connection error', { error });
       await this.reconnect();
-    });
+    };
 
-    this.provider.on('disconnect', async () => {
+    ws.onclose = async () => {
       this.logger.error('WebSocket disconnected');
       await this.reconnect();
-    });
+    };
   }
 
   private async reconnect() {
     try {
       this.logger.info('Attempting to reconnect');
       await this.provider.destroy();
-      this.provider = new WebSocketProvider(this.config.wsRpcUrl);
+      
+      const wsCreator = () => {
+        const ws = new WebSocket(this.config.wsRpcUrl, {
+          handshakeTimeout: 5000,
+          maxPayload: 100 * 1024 * 1024 // 100MB
+        });
+        return ws;
+      };
+      
+      this.provider = new WebSocketProvider(wsCreator, "base-sepolia", {
+        staticNetwork: true,
+        batchMaxCount: 1
+      });
+      
       await this.setupEventListeners();
       this.logger.info('Successfully reconnected');
     } catch (error) {

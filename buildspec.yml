@@ -1,0 +1,39 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - npm install -g pnpm
+      - pnpm install
+  
+  pre_build:
+    commands:
+      - echo "Starting pre-build phase"
+      - aws --version
+  
+  build:
+    commands:
+      - echo "Starting build phase"
+      - pnpm run build
+      
+  post_build:
+    commands:
+      - echo "Starting post-build phase"
+      - cp package.json dist/
+      - cp pnpm-lock.yaml dist/
+      - cp .env dist/
+      - cd dist && pnpm install --prod
+
+artifacts:
+  files:
+    - dist/**/*
+    - scripts/**/*
+    - appspec.yml
+  discard-paths: no
+
+cache:
+  paths:
+    - 'node_modules/**/*'
+    - '.pnpm-store/**/*' 
