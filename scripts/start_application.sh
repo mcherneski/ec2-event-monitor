@@ -14,11 +14,25 @@ fi
 # Check Node.js installation
 echo "Node.js version:"
 node --version
+which node
 
-# Check file permissions
-echo "File permissions:"
+# Check file permissions and contents
+echo "File permissions and contents:"
 ls -la /home/ec2-user/event-monitor/dist/
 ls -la /home/ec2-user/event-monitor/
+echo "First few lines of run.js:"
+head -n 5 /home/ec2-user/event-monitor/dist/run.js
+
+# Test running the application directly
+echo "Testing Node.js application directly:"
+cd /home/ec2-user/event-monitor
+sudo -u ec2-user node dist/run.js &
+sleep 5
+kill $! || true
+
+# Check environment file
+echo "Environment file contents (excluding sensitive data):"
+grep -v "KEY\|SECRET\|PASSWORD" /home/ec2-user/event-monitor/.env || echo "No .env file found"
 
 # Enable and start the service
 systemctl enable event-listener

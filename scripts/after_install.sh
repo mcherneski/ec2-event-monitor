@@ -73,12 +73,20 @@ User=ec2-user
 Group=ec2-user
 WorkingDirectory=/home/ec2-user/event-monitor
 Environment=NODE_ENV=production
+Environment=DEBUG=*
 EnvironmentFile=-/home/ec2-user/event-monitor/.env
-ExecStart=${NODE_PATH} /home/ec2-user/event-monitor/dist/run.js
+ExecStart=${NODE_PATH} --trace-warnings /home/ec2-user/event-monitor/dist/run.js
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/event-listener.log
 StandardError=append:/var/log/event-listener.error.log
+
+# Ensure we have access to enough file descriptors
+LimitNOFILE=65535
+
+# Ensure proper PATH for Node.js and npm global modules
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=NODE_PATH=/usr/lib/node_modules
 
 [Install]
 WantedBy=multi-user.target
@@ -92,6 +100,14 @@ chown ec2-user:ec2-user /var/log/event-listener.log /var/log/event-listener.erro
 # Debug: List all files in event-monitor directory
 echo "Listing files in event-monitor directory:"
 ls -la /home/ec2-user/event-monitor/
+
+# Test Node.js application
+echo "Testing Node.js application..."
+cd /home/ec2-user/event-monitor
+sudo -u ec2-user node --trace-warnings dist/run.js &
+PID=$!
+sleep 5
+kill $PID || true
 
 # Reload systemd daemon
 echo "Reloading systemd daemon..."
