@@ -23,7 +23,6 @@ phases:
       - echo "Starting post-build phase"
       - cp package.json dist/
       - cp pnpm-lock.yaml dist/
-      - cp .env dist/
       - cd dist && pnpm install --prod
 
 artifacts:
