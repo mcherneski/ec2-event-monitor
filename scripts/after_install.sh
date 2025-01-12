@@ -3,6 +3,21 @@ set -e  # Exit on error
 
 cd /home/ec2-user/event-monitor
 
+# Install pnpm if not already installed
+echo "Setting up pnpm..."
+if ! command -v pnpm &> /dev/null; then
+    curl -fsSL https://get.pnpm.io/install.sh | sh -
+    # Add pnpm to PATH
+    export PNPM_HOME="/root/.local/share/pnpm"
+    export PATH="$PNPM_HOME:$PATH"
+    # Also add to ec2-user's environment
+    echo 'export PNPM_HOME="/home/ec2-user/.local/share/pnpm"' >> /home/ec2-user/.bashrc
+    echo 'export PATH="$PNPM_HOME:$PATH"' >> /home/ec2-user/.bashrc
+fi
+
+# Source pnpm environment
+source ~/.bashrc
+
 # Install production dependencies
 echo "Installing dependencies..."
 pnpm install --prod
