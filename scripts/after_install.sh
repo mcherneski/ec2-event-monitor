@@ -74,8 +74,10 @@ Group=ec2-user
 WorkingDirectory=/home/ec2-user/event-monitor
 Environment=NODE_ENV=production
 Environment=DEBUG=*
+Environment=NODE_DEBUG=*
+Environment=NODE_OPTIONS=--trace-warnings
 EnvironmentFile=-/home/ec2-user/event-monitor/.env
-ExecStart=${NODE_PATH} --trace-warnings /home/ec2-user/event-monitor/dist/run.js
+ExecStart=/bin/sh -c '${NODE_PATH} dist/run.js 2>&1 | tee -a /var/log/event-listener.error.log'
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/event-listener.log
@@ -85,7 +87,7 @@ StandardError=append:/var/log/event-listener.error.log
 LimitNOFILE=65535
 
 # Ensure proper PATH for Node.js and npm global modules
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/root/.local/share/pnpm:/home/ec2-user/.local/share/pnpm
 Environment=NODE_PATH=/usr/lib/node_modules
 
 [Install]
@@ -96,17 +98,17 @@ EOF
 echo "Setting up log files..."
 touch /var/log/event-listener.log /var/log/event-listener.error.log
 chown ec2-user:ec2-user /var/log/event-listener.log /var/log/event-listener.error.log
-
-# Debug: List all files in event-monitor directory
-echo "Listing files in event-monitor directory:"
-ls -la /home/ec2-user/event-monitor/
+chmod 644 /var/log/event-listener.log /var/log/event-listener.error.log
 
 # Test Node.js application
 echo "Testing Node.js application..."
 cd /home/ec2-user/event-monitor
-sudo -u ec2-user node --trace-warnings dist/run.js &
+echo "Running test with full debug output:"
+sudo -u ec2-user NODE_ENV=production DEBUG=* NODE_DEBUG=* node --trace-warnings dist/run.js 2>&1 | tee /tmp/node-test.log &
 PID=$!
 sleep 5
+echo "Test run output:"
+cat /tmp/node-test.log
 kill $PID || true
 
 # Reload systemd daemon
