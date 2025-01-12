@@ -36,11 +36,12 @@ export const getConfig = async (): Promise<Config> => {
   }
   
   // In production, fetch from SSM
+  const env = process.env.NODE_ENV || 'dev';
   const [wsRpcUrl, nftAddress, stakingAddress, kinesisStream] = await Promise.all([
-    getSSMParameter('/event-monitor/ws-rpc-url'),
-    getSSMParameter('/event-monitor/nft-contract-address'),
-    getSSMParameter('/event-monitor/staking-contract-address'),
-    getSSMParameter('/event-monitor/kinesis-stream-name')
+    getSSMParameter(`/event-monitor/${env}/WS_RPC_URL`),
+    getSSMParameter(`/event-monitor/${env}/NFT_CONTRACT_ADDRESS`),
+    getSSMParameter(`/event-monitor/${env}/STAKING_CONTRACT_ADDRESS`),
+    getSSMParameter(`/event-monitor/${env}/KINESIS_STREAM_NAME`)
   ]);
   
   return {
@@ -50,6 +51,6 @@ export const getConfig = async (): Promise<Config> => {
     stakingContractAddress: stakingAddress,
     kinesisStreamName: kinesisStream,
     awsRegion: process.env.AWS_REGION || 'us-east-1',
-    environment: process.env.NODE_ENV || 'production'
+    environment: env
   };
 }; 
