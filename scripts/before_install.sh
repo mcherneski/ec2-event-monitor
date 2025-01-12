@@ -10,9 +10,17 @@ if ! command -v pnpm &> /dev/null; then
     source ~/.bashrc
 fi
 
+# Create ec2-user if it doesn't exist
+if ! id "ec2-user" &>/dev/null; then
+    useradd -m -s /bin/bash ec2-user
+    # Add ec2-user to sudoers
+    echo "ec2-user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ec2-user
+fi
+
 # Create application directory if it doesn't exist
 if [ ! -d "/home/ec2-user/event-monitor" ]; then
     mkdir -p /home/ec2-user/event-monitor
+    chown ec2-user:ec2-user /home/ec2-user/event-monitor
 fi
 
 # Clean up existing files if any
