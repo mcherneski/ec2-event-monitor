@@ -20,7 +20,12 @@ source ~/.bashrc
 
 # Install production dependencies
 echo "Installing dependencies..."
+rm -rf node_modules
 pnpm install --prod
+echo "Installed packages:"
+ls -la node_modules/.pnpm/
+echo "Checking for ws package:"
+ls -la node_modules/ws || echo "ws package not found!"
 
 # Ensure dist directory exists and has correct permissions
 mkdir -p dist
