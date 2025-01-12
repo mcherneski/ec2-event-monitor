@@ -4,8 +4,8 @@ set -e  # Exit on error
 # Install Node.js if not already installed
 if ! command -v node &> /dev/null; then
     echo "Installing Node.js..."
-    curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
-    yum install -y nodejs
+    # Install Node.js using dnf on Amazon Linux 2023
+    dnf install -y nodejs
 
     # Create symlink if needed
     if [ ! -f "/usr/bin/node" ] && [ -f "/usr/local/bin/node" ]; then
