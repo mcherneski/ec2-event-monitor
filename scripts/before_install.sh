@@ -1,14 +1,22 @@
 #!/bin/bash
-# Install node and pnpm if not already installed
+set -e  # Exit on error
+
+# Install Node.js if not already installed
 if ! command -v node &> /dev/null; then
-    curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
-    sudo yum install -y nodejs
+    echo "Installing Node.js..."
+    curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
+    yum install -y nodejs
+
+    # Create symlink if needed
+    if [ ! -f "/usr/bin/node" ] && [ -f "/usr/local/bin/node" ]; then
+        ln -s /usr/local/bin/node /usr/bin/node
+    fi
 fi
 
-if ! command -v pnpm &> /dev/null; then
-    curl -fsSL https://get.pnpm.io/install.sh | sh -
-    source ~/.bashrc
-fi
+# Verify Node.js installation
+echo "Node.js version:"
+node --version
+which node
 
 # Create ec2-user if it doesn't exist
 if ! id "ec2-user" &>/dev/null; then
@@ -24,4 +32,9 @@ if [ ! -d "/home/ec2-user/event-monitor" ]; then
 fi
 
 # Clean up existing files if any
-rm -rf /home/ec2-user/event-monitor/* 
+rm -rf /home/ec2-user/event-monitor/*
+
+# Debug: Show installed binaries
+echo "Node.js binary location:"
+ls -l /usr/bin/node* || true
+ls -l /usr/local/bin/node* || true 

@@ -58,7 +58,11 @@ fi
 
 # Create systemd service file
 echo "Creating systemd service file..."
-cat > /etc/systemd/system/event-listener.service << 'EOF'
+# Get the actual path to node binary
+NODE_PATH=$(which node)
+echo "Using Node.js from: $NODE_PATH"
+
+cat > /etc/systemd/system/event-listener.service << EOF
 [Unit]
 Description=Blockchain Event Listener
 After=network.target
@@ -70,7 +74,7 @@ Group=ec2-user
 WorkingDirectory=/home/ec2-user/event-monitor
 Environment=NODE_ENV=production
 EnvironmentFile=-/home/ec2-user/event-monitor/.env
-ExecStart=/usr/bin/node /home/ec2-user/event-monitor/dist/run.js
+ExecStart=${NODE_PATH} /home/ec2-user/event-monitor/dist/run.js
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/event-listener.log
