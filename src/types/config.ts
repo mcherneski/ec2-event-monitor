@@ -23,7 +23,7 @@ async function getSSMParameter(paramName: string): Promise<string> {
     });
     
     const response = await client.send(command);
-    if (!response.Parameter?.Value) {
+    if (!response.Parameter || !response.Parameter.Value) {
       throw new Error(`Parameter ${paramName} has no value`);
     }
     logger.info(`Successfully fetched parameter: ${paramName}`);
