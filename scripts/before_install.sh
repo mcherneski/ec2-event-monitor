@@ -5,48 +5,32 @@ set -e  # Exit on error
 echo "System information:"
 cat /etc/os-release
 echo "Available package managers:"
-which yum dnf apt apt-get 2>/dev/null || echo "No common package managers found"
+which apt apt-get 2>/dev/null || echo "No common package managers found"
 echo "PATH=$PATH"
 
-# Install Node.js if not already installed
-if ! command -v node &> /dev/null; then
-    echo "Installing Node.js..."
-    
-    # Check which package manager is available
-    if command -v apt-get &> /dev/null; then
-        echo "Using apt package manager..."
-        curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-        apt-get install -y nodejs
-    elif command -v dnf &> /dev/null; then
-        echo "Using dnf package manager..."
-        dnf install -y nodejs
-    elif command -v yum &> /dev/null; then
-        echo "Using yum package manager..."
-        curl -sL https://rpm.nodesource.com/setup_18.x | bash -
-        yum install -y nodejs
-    else
-        echo "No supported package manager found in PATH"
-        echo "Trying direct path to yum..."
-        if [ -f "/usr/bin/yum" ]; then
-            echo "Found yum at /usr/bin/yum"
-            curl -sL https://rpm.nodesource.com/setup_18.x | bash -
-            /usr/bin/yum install -y nodejs
-        else
-            echo "Could not find any package manager"
-            exit 1
-        fi
-    fi
+# Install Node.js 18.x
+echo "Installing Node.js 18.x..."
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
 
-    # Create symlink if needed
-    if [ ! -f "/usr/bin/node" ] && [ -f "/usr/local/bin/node" ]; then
-        ln -s /usr/local/bin/node /usr/bin/node
-    fi
+# Create symlinks if needed
+if [ ! -f "/usr/bin/node" ]; then
+    echo "Creating symlink for node..."
+    sudo ln -s $(which node) /usr/bin/node
+fi
+
+if [ ! -f "/usr/bin/npm" ]; then
+    echo "Creating symlink for npm..."
+    sudo ln -s $(which npm) /usr/bin/npm
 fi
 
 # Verify Node.js installation
 echo "Node.js version:"
 node --version
 which node
+echo "npm version:"
+npm --version
+which npm
 
 # Create ec2-user if it doesn't exist
 if ! id "ec2-user" &>/dev/null; then
@@ -65,6 +49,6 @@ fi
 rm -rf /home/ec2-user/event-monitor/*
 
 # Debug: Show installed binaries
-echo "Node.js binary location:"
+echo "Node.js binary locations:"
 ls -l /usr/bin/node* || true
 ls -l /usr/local/bin/node* || true 
