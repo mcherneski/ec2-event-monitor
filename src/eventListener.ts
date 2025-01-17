@@ -1,4 +1,4 @@
-import { WebSocketProvider, Contract, EventLog } from 'ethers';
+import { WebSocketProvider, Contract, EventLog, id } from 'ethers';
 import WebSocket from 'ws';
 import { KinesisClient, PutRecordCommand } from '@aws-sdk/client-kinesis';
 import type { Config } from './types/config.js';
@@ -14,6 +14,15 @@ const EVENT_ABIS = [
   'event Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
   'event Unstaked(address indexed staker, uint256 tokenId, uint256 indexed id)'
 ];
+
+// Add event signature logging
+const EVENT_SIGNATURES = {
+  Transfer: id('Transfer(address,address,uint256,uint256)'),
+  Burn: id('Burn(address,uint256,uint256)'),
+  Mint: id('Mint(address,uint256,uint256)'),
+  Staked: id('Staked(address,uint256,uint256)'),
+  Unstaked: id('Unstaked(address,uint256,uint256)')
+};
 
 export class EventListener {
   private provider: WebSocketProvider;
@@ -92,7 +101,7 @@ export class EventListener {
     this.logger.info('Setting up event listeners', {
       nftContract: this.config.nftContractAddress,
       stakingContract: this.config.stakingContractAddress,
-      nftContractEvents: EVENT_ABIS.join(', '),
+      eventSignatures: EVENT_SIGNATURES,
       wsUrl: this.config.wsRpcUrl
     });
 
@@ -101,6 +110,18 @@ export class EventListener {
       nftContractAddress: this.nftContract.target,
       stakingContractAddress: this.stakingContract.target,
       providerNetwork: await this.provider.getNetwork()
+    });
+
+    // Add raw event logging
+    this.provider.on('debug', (info) => {
+      if (info.action === 'receive') {
+        this.logger.info('Raw event received', {
+          eventInfo: info,
+          matchingSignature: Object.entries(EVENT_SIGNATURES).find(([name, sig]) => 
+            info.topics && info.topics[0] === sig
+          )?.[0] || 'none'
+        });
+      }
     });
 
     // NFT Contract Events
