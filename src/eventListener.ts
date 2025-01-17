@@ -49,6 +49,9 @@ export class EventListener {
             dataSize: typeof event.data === 'string' ? event.data.length : 
                       event.data instanceof Buffer ? event.data.length :
                       event.data instanceof ArrayBuffer ? event.data.byteLength : 'unknown',
+            data: typeof event.data === 'string' ? event.data : 
+                  event.data instanceof Buffer ? event.data.toString() :
+                  event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format',
             timestamp: new Date().toISOString()
           });
         };
@@ -94,7 +97,11 @@ export class EventListener {
     // NFT Contract Events
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
       this.logger.info('Transfer event received', {
-        from, to, tokenId: tokenId.toString(), id: id.toString()
+        from, 
+        to, 
+        tokenId: tokenId.toString(), 
+        id: id.toString(),
+        rawEvent: JSON.stringify(event)
       });
       await this.handleEvent({
         type: 'Transfer',
@@ -137,6 +144,12 @@ export class EventListener {
 
     // Staking Contract Events
     this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
+      this.logger.info('Staked event received', {
+        staker,
+        tokenId: tokenId.toString(),
+        id: id.toString(),
+        rawEvent: JSON.stringify(event)
+      });
       await this.handleEvent({
         type: 'Stake',
         staker: staker.toLowerCase(),
@@ -170,6 +183,7 @@ export class EventListener {
       this.logger.info('Processing blockchain event', {
         type: event.type,
         tokenId: event.tokenId,
+        eventData: JSON.stringify(event),
         timestamp: new Date().toISOString()
       });
 
@@ -190,6 +204,7 @@ export class EventListener {
         streamName: record.StreamName,
         partitionKey: record.PartitionKey,
         dataSize: record.Data.length,
+        data: record.Data.toString(),
         timestamp: new Date().toISOString()
       });
 
@@ -200,7 +215,8 @@ export class EventListener {
         sequenceNumber: result.SequenceNumber,
         shardId: result.ShardId,
         timestamp: new Date().toISOString(),
-        eventType: event.type
+        eventType: event.type,
+        streamName: this.config.kinesisStreamName
       });
 
       // Publish metrics
@@ -221,7 +237,7 @@ export class EventListener {
           stack: error.stack,
           timestamp: new Date().toISOString()
         } : error,
-        event,
+        event: JSON.stringify(event),
         kinesisStream: this.config.kinesisStreamName,
         region: this.kinesis.config.region()
       });
@@ -233,10 +249,13 @@ export class EventListener {
     const ws = this.provider.websocket as WebSocket;
     
     ws.onmessage = (event) => {
-      this.logger.info('WebSocket message received in monitor', {
+      this.logger.info('WebSocket message received', {
         dataSize: typeof event.data === 'string' ? event.data.length : 
                   event.data instanceof Buffer ? event.data.length :
                   event.data instanceof ArrayBuffer ? event.data.byteLength : 'unknown',
+        data: typeof event.data === 'string' ? event.data : 
+              event.data instanceof Buffer ? event.data.toString() :
+              event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format',
         timestamp: new Date().toISOString()
       });
     };
