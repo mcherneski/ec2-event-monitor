@@ -8,6 +8,11 @@ echo "Available package managers:"
 which apt apt-get 2>/dev/null || echo "No apt/apt-get found"
 echo "PATH=$PATH"
 
+# Remove any existing Node.js installations that might conflict
+echo "Removing any conflicting Node.js packages..."
+sudo apt-get remove -y nodejs nodejs-doc libnode-dev || true
+sudo apt-get autoremove -y || true
+
 # Install Node.js 18.x
 echo "Installing Node.js 18.x..."
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
