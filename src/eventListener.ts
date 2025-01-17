@@ -94,10 +94,21 @@ export class EventListener {
         batchMaxCount: 1
       });
       
+      this.logger.info('Provider created', {
+        network: "base-sepolia",
+        wsUrl: this.config.wsRpcUrl
+      });
+      
       this.nftContract = new Contract(config.nftContractAddress, EVENT_ABIS, this.provider);
       this.stakingContract = new Contract(config.stakingContractAddress, EVENT_ABIS, this.provider);
       this.kinesis = new KinesisClient({ region: config.awsRegion });
       this.metrics = new MetricsPublisher(config.awsRegion, 'NGU/BlockchainEvents');
+      
+      this.logger.info('Contracts initialized', {
+        nftAddress: this.nftContract.target,
+        stakingAddress: this.stakingContract.target,
+        eventSignatures: EVENT_SIGNATURES
+      });
     } catch (error) {
       this.logger.error('Failed to initialize WebSocket provider', { error });
       throw error;
@@ -130,11 +141,17 @@ export class EventListener {
     // Add raw event logging
     this.provider.on('debug', (info) => {
       if (info.action === 'receive') {
+        const receivedTopic = info.topics && info.topics[0];
+        const matchingEvent = Object.entries(EVENT_SIGNATURES).find(([name, sig]) => sig === receivedTopic);
+        
         this.logger.info('Raw event received', {
           eventInfo: info,
-          matchingSignature: Object.entries(EVENT_SIGNATURES).find(([name, sig]) => 
-            info.topics && info.topics[0] === sig
-          )?.[0] || 'none'
+          receivedTopic,
+          allSignatures: EVENT_SIGNATURES,
+          matchingEvent: matchingEvent ? matchingEvent[0] : 'none',
+          contractAddress: info.address,
+          nftContractAddress: this.nftContract.target,
+          stakingContractAddress: this.stakingContract.target
         });
       }
     });
