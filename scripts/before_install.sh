@@ -5,7 +5,7 @@ set -e  # Exit on error
 echo "System information:"
 cat /etc/os-release
 echo "Available package managers:"
-which apt apt-get 2>/dev/null || echo "No common package managers found"
+which apt apt-get 2>/dev/null || echo "No apt/apt-get found"
 echo "PATH=$PATH"
 
 # Install Node.js 18.x
