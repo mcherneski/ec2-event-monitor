@@ -37,20 +37,36 @@ export class EventListener {
     this.config = config;
     this.logger = new Logger('EventListener');
     
-    // Log event signatures for comparison
-    this.logger.info('Event signatures', {
-      Transfer: id('Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)'),
-      Burn: id('Burn(address indexed from,uint256 indexed tokenId,uint256 id)'),
-      Mint: id('Mint(address indexed to,uint256 indexed tokenId,uint256 id)'),
-      Staked: id('Staked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
-      Unstaked: id('Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
-      // Add some variations to check
-      TransferIndexed: id('Transfer(address indexed,address indexed,uint256 indexed,uint256)'),
-      StakedIndexed: id('Staked(address indexed,uint256,uint256 indexed)'),
-      UnstakedIndexed: id('Unstaked(address indexed,uint256,uint256 indexed)')
-    });
-
     try {
+      this.logger.info('Starting event listener with config', {
+        nftContractAddress: config.nftContractAddress,
+        stakingContractAddress: config.stakingContractAddress,
+        wsRpcUrl: config.wsRpcUrl,
+        kinesisStreamName: config.kinesisStreamName
+      });
+
+      // Log all event signatures we're watching for
+      Object.entries(EVENT_SIGNATURES).forEach(([name, signature]) => {
+        this.logger.info('Watching for event', {
+          name,
+          signature,
+          abi: EVENT_ABIS.find(abi => abi.includes(name))
+        });
+      });
+
+      // Log event signatures for comparison
+      this.logger.info('Event signatures', {
+        Transfer: id('Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)'),
+        Burn: id('Burn(address indexed from,uint256 indexed tokenId,uint256 id)'),
+        Mint: id('Mint(address indexed to,uint256 indexed tokenId,uint256 id)'),
+        Staked: id('Staked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
+        Unstaked: id('Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
+        // Add some variations to check
+        TransferIndexed: id('Transfer(address indexed,address indexed,uint256 indexed,uint256)'),
+        StakedIndexed: id('Staked(address indexed,uint256,uint256 indexed)'),
+        UnstakedIndexed: id('Unstaked(address indexed,uint256,uint256 indexed)')
+      });
+
       this.logger.info('Attempting to connect to WebSocket provider', { url: config.wsRpcUrl });
       
       const wsCreator = () => {
@@ -123,12 +139,51 @@ export class EventListener {
 
   private async setupEventListeners() {
     this.logger.info('Setting up event listeners', {
-      nftContract: this.config.nftContractAddress,
-      stakingContract: this.config.stakingContractAddress,
-      eventSignatures: EVENT_SIGNATURES,
-      wsUrl: this.config.wsRpcUrl,
-      // Log the actual ABIs we're using
-      eventAbis: EVENT_ABIS
+      nftContractAddress: this.nftContract.target,
+      stakingContractAddress: this.stakingContract.target
+    });
+
+    // Add raw event logging with more details
+    this.provider.on('debug', (info) => {
+      if (info.action === 'receive') {
+        const receivedTopic = info.topics && info.topics[0];
+        const matchingEvent = Object.entries(EVENT_SIGNATURES).find(([name, sig]) => sig === receivedTopic);
+        
+        this.logger.info('Raw event received', {
+          eventTopic: receivedTopic,
+          contractAddress: info.address,
+          watchedContracts: {
+            nft: this.nftContract.target,
+            staking: this.stakingContract.target
+          },
+          matchingEventName: matchingEvent ? matchingEvent[0] : 'none',
+          allTopics: info.topics,
+          rawData: info.data
+        });
+
+        // Log if contract address matches
+        if (info.address) {
+          const isNFTContract = typeof this.nftContract.target === 'string' && 
+            info.address.toLowerCase() === this.nftContract.target.toLowerCase();
+          const isStakingContract = typeof this.stakingContract.target === 'string' && 
+            info.address.toLowerCase() === this.stakingContract.target.toLowerCase();
+          this.logger.info('Contract address check', {
+            receivedAddress: info.address,
+            isNFTContract,
+            isStakingContract,
+            nftContractAddress: this.nftContract.target,
+            stakingContractAddress: this.stakingContract.target
+          });
+        }
+      }
+    });
+
+    // Add logging for contract event registration
+    this.logger.info('Registering contract event handlers', {
+      nftEvents: ['Transfer', 'Mint', 'Burn'],
+      stakingEvents: ['Staked', 'Unstaked'],
+      nftAddress: this.nftContract.target,
+      stakingAddress: this.stakingContract.target
     });
 
     // Log when contracts are initialized
@@ -136,24 +191,6 @@ export class EventListener {
       nftContractAddress: this.nftContract.target,
       stakingContractAddress: this.stakingContract.target,
       providerNetwork: await this.provider.getNetwork()
-    });
-
-    // Add raw event logging
-    this.provider.on('debug', (info) => {
-      if (info.action === 'receive') {
-        const receivedTopic = info.topics && info.topics[0];
-        const matchingEvent = Object.entries(EVENT_SIGNATURES).find(([name, sig]) => sig === receivedTopic);
-        
-        this.logger.info('Raw event received', {
-          eventInfo: info,
-          receivedTopic,
-          allSignatures: EVENT_SIGNATURES,
-          matchingEvent: matchingEvent ? matchingEvent[0] : 'none',
-          contractAddress: info.address,
-          nftContractAddress: this.nftContract.target,
-          stakingContractAddress: this.stakingContract.target
-        });
-      }
     });
 
     // NFT Contract Events
