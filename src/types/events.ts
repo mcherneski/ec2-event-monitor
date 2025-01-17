@@ -1,5 +1,5 @@
 export interface OnChainEvent {
-  type: 'Transfer' | 'Stake' | 'Unstake' | 'Mint' | 'Burn';
+  type: 'Transfer' | 'Staked' | 'Unstaked' | 'Mint' | 'Burn';
   tokenId: string;
   id: string;
   from?: string;

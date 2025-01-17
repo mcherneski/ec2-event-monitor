@@ -195,7 +195,7 @@ export class EventListener {
         staker, tokenId: tokenId.toString(), id: id.toString()
       });
       await this.handleEvent({
-        type: 'Stake',
+        type: 'Staked',
         staker: staker.toLowerCase(),
         tokenId: tokenId.toString(),
         id: id.toString(),
@@ -208,7 +208,7 @@ export class EventListener {
 
     this.stakingContract.on('Unstaked', async (staker, tokenId, id, event) => {
       await this.handleEvent({
-        type: 'Unstake',
+        type: 'Unstaked',
         staker: staker.toLowerCase(),
         tokenId: tokenId.toString(),
         id: id.toString(),
