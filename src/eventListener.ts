@@ -299,17 +299,17 @@ export class EventListener {
     });
 
     // Add error handlers for both contracts
-    this.nftContract.on('error', (error) => {
+    this.nftContract.addListener('error', (error) => {
       this.logger.error('NFT contract event error', { error, contract: this.nftContract.target });
     });
 
-    this.stakingContract.on('error', (error) => {
+    this.stakingContract.addListener('error', (error) => {
       this.logger.error('Staking contract event error', { error, contract: this.stakingContract.target });
     });
 
     this.logger.info('Event listeners setup complete', {
-      nftContractFilters: await this.nftContract.queryFilter('Transfer', -1),
-      stakingContractFilters: await this.stakingContract.queryFilter('Staked', -1)
+      nftContractAddress: this.nftContract.target,
+      stakingContractAddress: this.stakingContract.target
     });
   }
 
