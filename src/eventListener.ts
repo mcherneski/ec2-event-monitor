@@ -17,11 +17,11 @@ const EVENT_ABIS = [
 
 // Add event signature logging
 const EVENT_SIGNATURES = {
-  Transfer: id('Transfer(address,address,uint256,uint256)'),
-  Burn: id('Burn(address,uint256,uint256)'),
-  Mint: id('Mint(address,uint256,uint256)'),
-  Staked: id('Staked(address,uint256,uint256)'),
-  Unstaked: id('Unstaked(address,uint256,uint256)')
+  Transfer: id('Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)'),
+  Burn: id('Burn(address indexed from,uint256 indexed tokenId,uint256 id)'),
+  Mint: id('Mint(address indexed to,uint256 indexed tokenId,uint256 id)'),
+  Staked: id('Staked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
+  Unstaked: id('Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)')
 };
 
 export class EventListener {
@@ -37,6 +37,19 @@ export class EventListener {
     this.config = config;
     this.logger = new Logger('EventListener');
     
+    // Log event signatures for comparison
+    this.logger.info('Event signatures', {
+      Transfer: id('Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)'),
+      Burn: id('Burn(address indexed from,uint256 indexed tokenId,uint256 id)'),
+      Mint: id('Mint(address indexed to,uint256 indexed tokenId,uint256 id)'),
+      Staked: id('Staked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
+      Unstaked: id('Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
+      // Add some variations to check
+      TransferIndexed: id('Transfer(address indexed,address indexed,uint256 indexed,uint256)'),
+      StakedIndexed: id('Staked(address indexed,uint256,uint256 indexed)'),
+      UnstakedIndexed: id('Unstaked(address indexed,uint256,uint256 indexed)')
+    });
+
     try {
       this.logger.info('Attempting to connect to WebSocket provider', { url: config.wsRpcUrl });
       
@@ -102,7 +115,9 @@ export class EventListener {
       nftContract: this.config.nftContractAddress,
       stakingContract: this.config.stakingContractAddress,
       eventSignatures: EVENT_SIGNATURES,
-      wsUrl: this.config.wsRpcUrl
+      wsUrl: this.config.wsRpcUrl,
+      // Log the actual ABIs we're using
+      eventAbis: EVENT_ABIS
     });
 
     // Log when contracts are initialized
