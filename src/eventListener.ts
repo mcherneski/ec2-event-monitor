@@ -91,17 +91,25 @@ export class EventListener {
   private async setupEventListeners() {
     this.logger.info('Setting up event listeners', {
       nftContract: this.config.nftContractAddress,
-      stakingContract: this.config.stakingContractAddress
+      stakingContract: this.config.stakingContractAddress,
+      nftContractEvents: EVENT_ABIS.join(', '),
+      wsUrl: this.config.wsRpcUrl
+    });
+
+    // Log when contracts are initialized
+    this.logger.info('Contract instances created', {
+      nftContractAddress: this.nftContract.target,
+      stakingContractAddress: this.stakingContract.target,
+      providerNetwork: await this.provider.getNetwork()
     });
 
     // NFT Contract Events
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
-      this.logger.info('Transfer event received', {
-        from, 
-        to, 
-        tokenId: tokenId.toString(), 
-        id: id.toString(),
-        rawEvent: JSON.stringify(event)
+      this.logger.info('Transfer event detected', {
+        eventName: 'Transfer',
+        contractAddress: event.address,
+        eventTopics: event.topics,
+        from, to, tokenId: tokenId.toString(), id: id.toString()
       });
       await this.handleEvent({
         type: 'Transfer',
@@ -144,11 +152,11 @@ export class EventListener {
 
     // Staking Contract Events
     this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
-      this.logger.info('Staked event received', {
-        staker,
-        tokenId: tokenId.toString(),
-        id: id.toString(),
-        rawEvent: JSON.stringify(event)
+      this.logger.info('Staked event detected', {
+        eventName: 'Staked',
+        contractAddress: event.address,
+        eventTopics: event.topics,
+        staker, tokenId: tokenId.toString(), id: id.toString()
       });
       await this.handleEvent({
         type: 'Stake',
@@ -175,7 +183,19 @@ export class EventListener {
       });
     });
 
-    this.logger.info('Event listeners setup complete');
+    // Add error handlers for both contracts
+    this.nftContract.on('error', (error) => {
+      this.logger.error('NFT contract event error', { error, contract: this.nftContract.target });
+    });
+
+    this.stakingContract.on('error', (error) => {
+      this.logger.error('Staking contract event error', { error, contract: this.stakingContract.target });
+    });
+
+    this.logger.info('Event listeners setup complete', {
+      nftContractFilters: await this.nftContract.queryFilter('Transfer', -1),
+      stakingContractFilters: await this.stakingContract.queryFilter('Staked', -1)
+    });
   }
 
   private async handleEvent(event: OnChainEvent) {
