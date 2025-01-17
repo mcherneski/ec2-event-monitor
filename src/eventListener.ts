@@ -298,14 +298,18 @@ export class EventListener {
       });
     });
 
-    // Add error handlers for both contracts
-    this.nftContract.addListener('error', (error) => {
-      this.logger.error('NFT contract event error', { error, contract: this.nftContract.target });
+    // Add provider-level error handling
+    this.provider.on('error', (error) => {
+      this.logger.error('Provider error', { error });
     });
 
-    this.stakingContract.addListener('error', (error) => {
-      this.logger.error('Staking contract event error', { error, contract: this.stakingContract.target });
-    });
+    // Add WebSocket error handling
+    const ws = this.provider.websocket as WebSocket;
+    if (ws) {
+      ws.onerror = (error) => {
+        this.logger.error('WebSocket error', { error });
+      };
+    }
 
     this.logger.info('Event listeners setup complete', {
       nftContractAddress: this.nftContract.target,
