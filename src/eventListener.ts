@@ -83,13 +83,38 @@ export class EventListener {
         };
         
         ws.onmessage = (event) => {
+          const rawData = typeof event.data === 'string' ? event.data : 
+                         event.data instanceof Buffer ? event.data.toString() :
+                         event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format';
+          
+          try {
+            const parsedData = JSON.parse(rawData);
+            if (parsedData.method === 'eth_subscription' && parsedData.params?.result) {
+              const result = parsedData.params.result;
+              this.logger.info('Parsed WebSocket event', {
+                contractAddress: result.address,
+                topics: result.topics,
+                matchingSignatures: Object.entries(EVENT_SIGNATURES).map(([name, sig]) => ({
+                  name,
+                  signature: sig,
+                  matches: sig === result.topics[0]
+                })),
+                nftContract: this.nftContract.target,
+                stakingContract: this.stakingContract.target,
+                isNFTContract: typeof this.nftContract.target === 'string' && result.address.toLowerCase() === this.nftContract.target.toLowerCase(),
+                isStakingContract: typeof this.stakingContract.target === 'string' && result.address.toLowerCase() === this.stakingContract.target.toLowerCase()
+              });
+            }
+          } catch (error) {
+            this.logger.error('Error parsing WebSocket message', { error, rawData });
+          }
+
+          // Original logging
           this.logger.info('WebSocket message received', {
             dataSize: typeof event.data === 'string' ? event.data.length : 
                       event.data instanceof Buffer ? event.data.length :
                       event.data instanceof ArrayBuffer ? event.data.byteLength : 'unknown',
-            data: typeof event.data === 'string' ? event.data : 
-                  event.data instanceof Buffer ? event.data.toString() :
-                  event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format',
+            data: rawData,
             timestamp: new Date().toISOString()
           });
         };
