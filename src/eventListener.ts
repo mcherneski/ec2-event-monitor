@@ -80,7 +80,8 @@ export class EventListener {
         id: id.toString(),
         timestamp: (await event.getBlock()).timestamp,
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        transactionIndex: event.transactionIndex
       });
     });
 
@@ -92,7 +93,8 @@ export class EventListener {
         id: id.toString(),
         timestamp: (await event.getBlock()).timestamp,
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        transactionIndex: event.transactionIndex
       });
     });
 
@@ -104,7 +106,8 @@ export class EventListener {
         id: id.toString(),
         timestamp: (await event.getBlock()).timestamp,
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        transactionIndex: event.transactionIndex
       });
     });
 
@@ -117,7 +120,8 @@ export class EventListener {
         id: id.toString(),
         timestamp: (await event.getBlock()).timestamp,
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        transactionIndex: event.transactionIndex
       });
     });
 
@@ -129,7 +133,8 @@ export class EventListener {
         id: id.toString(),
         timestamp: (await event.getBlock()).timestamp,
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        transactionIndex: event.transactionIndex
       });
     });
   }

@@ -8,6 +8,7 @@ export interface OnChainEvent {
   timestamp: number;
   transactionHash: string;
   blockNumber: number;
+  transactionIndex: number;
 }
 
 export interface MetricData {
