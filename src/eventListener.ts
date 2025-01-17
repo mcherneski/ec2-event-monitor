@@ -38,11 +38,27 @@ export class EventListener {
         });
         
         ws.onopen = () => {
-          this.logger.info('WebSocket connection established successfully');
+          this.logger.info('WebSocket connection established successfully', {
+            url: config.wsRpcUrl,
+            timestamp: new Date().toISOString()
+          });
+        };
+        
+        ws.onmessage = (event) => {
+          this.logger.info('WebSocket message received', {
+            dataSize: typeof event.data === 'string' ? event.data.length : 
+                      event.data instanceof Buffer ? event.data.length :
+                      event.data instanceof ArrayBuffer ? event.data.byteLength : 'unknown',
+            timestamp: new Date().toISOString()
+          });
         };
         
         ws.onerror = (error: WebSocket.ErrorEvent) => {
-          this.logger.error('WebSocket connection error in constructor', { error });
+          this.logger.error('WebSocket connection error in constructor', {
+            error,
+            timestamp: new Date().toISOString(),
+            wsUrl: config.wsRpcUrl
+          });
         };
         
         return ws;
@@ -70,8 +86,16 @@ export class EventListener {
   }
 
   private async setupEventListeners() {
+    this.logger.info('Setting up event listeners', {
+      nftContract: this.config.nftContractAddress,
+      stakingContract: this.config.stakingContractAddress
+    });
+
     // NFT Contract Events
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
+      this.logger.info('Transfer event received', {
+        from, to, tokenId: tokenId.toString(), id: id.toString()
+      });
       await this.handleEvent({
         type: 'Transfer',
         from: from.toLowerCase(),
@@ -137,16 +161,23 @@ export class EventListener {
         transactionIndex: event.transactionIndex
       });
     });
+
+    this.logger.info('Event listeners setup complete');
   }
 
   private async handleEvent(event: OnChainEvent) {
     try {
-      this.logger.info('Processing event', { event });
+      this.logger.info('Processing blockchain event', {
+        type: event.type,
+        tokenId: event.tokenId,
+        timestamp: new Date().toISOString()
+      });
 
       // Log Kinesis configuration
-      this.logger.info('Kinesis configuration', {
+      this.logger.info('Preparing Kinesis record', {
         streamName: this.config.kinesisStreamName,
-        region: this.kinesis.config.region()
+        region: this.kinesis.config.region(),
+        eventType: event.type
       });
 
       const record = {
@@ -155,14 +186,21 @@ export class EventListener {
         Data: Buffer.from(JSON.stringify(event))
       };
 
-      this.logger.info('Sending record to Kinesis', { record });
+      this.logger.info('Sending record to Kinesis', {
+        streamName: record.StreamName,
+        partitionKey: record.PartitionKey,
+        dataSize: record.Data.length,
+        timestamp: new Date().toISOString()
+      });
 
       // Send to Kinesis
       const result = await this.kinesis.send(new PutRecordCommand(record));
       
       this.logger.info('Successfully sent to Kinesis', { 
         sequenceNumber: result.SequenceNumber,
-        shardId: result.ShardId
+        shardId: result.ShardId,
+        timestamp: new Date().toISOString(),
+        eventType: event.type
       });
 
       // Publish metrics
@@ -180,7 +218,8 @@ export class EventListener {
         error: error instanceof Error ? {
           message: error.message,
           name: error.name,
-          stack: error.stack
+          stack: error.stack,
+          timestamp: new Date().toISOString()
         } : error,
         event,
         kinesisStream: this.config.kinesisStreamName,
@@ -193,15 +232,36 @@ export class EventListener {
   private async monitorConnection() {
     const ws = this.provider.websocket as WebSocket;
     
+    ws.onmessage = (event) => {
+      this.logger.info('WebSocket message received in monitor', {
+        dataSize: typeof event.data === 'string' ? event.data.length : 
+                  event.data instanceof Buffer ? event.data.length :
+                  event.data instanceof ArrayBuffer ? event.data.byteLength : 'unknown',
+        timestamp: new Date().toISOString()
+      });
+    };
+    
     ws.onerror = async (error: WebSocket.ErrorEvent) => {
-      this.logger.error('WebSocket connection error', { error });
+      this.logger.error('WebSocket connection error', {
+        error,
+        timestamp: new Date().toISOString(),
+        wsUrl: this.config.wsRpcUrl
+      });
       await this.reconnect();
     };
 
     ws.onclose = async () => {
-      this.logger.error('WebSocket disconnected');
+      this.logger.error('WebSocket disconnected', {
+        timestamp: new Date().toISOString(),
+        wsUrl: this.config.wsRpcUrl
+      });
       await this.reconnect();
     };
+
+    this.logger.info('Connection monitoring started', {
+      wsUrl: this.config.wsRpcUrl,
+      timestamp: new Date().toISOString()
+    });
   }
 
   private async reconnect() {
