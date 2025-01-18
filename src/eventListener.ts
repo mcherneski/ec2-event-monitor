@@ -194,24 +194,9 @@ export class EventListener {
       stakingContractAddress: this.stakingContract.target
     });
 
-    // Create event filters
-    const mintFilter = this.nftContract.filters.Mint();
-    const transferFilter = this.nftContract.filters.Transfer();
-    const burnFilter = this.nftContract.filters.Burn();
-    const stakedFilter = this.stakingContract.filters.Staked();
-    const unstakedFilter = this.stakingContract.filters.Unstaked();
-
-    this.logger.info('Created event filters', {
-      mintFilter,
-      transferFilter,
-      burnFilter,
-      stakedFilter,
-      unstakedFilter
-    });
-
-    // Subscribe to events with filters
-    this.nftContract.on(mintFilter, async (to, tokenId, id, event) => {
-      this.logger.info('Mint event detected through filter', {
+    // NFT Contract Events
+    this.nftContract.on('Mint', async (to, tokenId, id, event) => {
+      this.logger.info('Mint event detected', {
         eventName: 'Mint',
         contractAddress: event.address,
         eventTopics: event.topics,
@@ -369,51 +354,6 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('Mint', async (to, tokenId, id, event) => {
-      this.logger.info('Mint event detected', {
-        eventName: 'Mint',
-        contractAddress: event.address,
-        eventTopics: event.topics,
-        to,
-        tokenId: tokenId.toString(),
-        id: id.toString(),
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      });
-
-      try {
-        const block = await event.getBlock();
-        this.logger.info('Retrieved block information for Mint', {
-          blockNumber: block.number,
-          blockTimestamp: block.timestamp,
-          eventType: 'Mint'
-        });
-
-        await this.handleEvent({
-          type: 'Mint',
-          to: to.toLowerCase(),
-          tokenId: tokenId.toString(),
-          id: id.toString(),
-          timestamp: block.timestamp,
-          transactionHash: event.transactionHash,
-          blockNumber: event.blockNumber,
-          transactionIndex: event.transactionIndex
-        });
-      } catch (error) {
-        this.logger.error('Error in Mint event handler', {
-          error: error instanceof Error ? {
-            message: error.message,
-            stack: error.stack
-          } : error,
-          eventData: {
-            to, tokenId: tokenId.toString(), id: id.toString(),
-            blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
-          }
-        });
-      }
-    });
-
     this.nftContract.on('Burn', async (from, tokenId, id, event) => {
       await this.handleEvent({
         type: 'Burn',
@@ -484,6 +424,18 @@ export class EventListener {
         blockNumber: event.blockNumber,
         transactionIndex: event.transactionIndex
       });
+    });
+
+    // Add provider-level debug logging
+    this.provider.on('debug', (info) => {
+      if (info.action === 'receive') {
+        const receivedTopic = info.topics && info.topics[0];
+        this.logger.info('Raw event received', {
+          contractAddress: info.address,
+          topics: info.topics,
+          data: info.data
+        });
+      }
     });
 
     // Add provider-level error handling
