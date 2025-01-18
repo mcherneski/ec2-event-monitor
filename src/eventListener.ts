@@ -131,12 +131,6 @@ export class EventListener {
 
       try {
         const block = await event.getBlock();
-        this.logger.info('Retrieved block information for Mint', {
-          blockNumber: block.number,
-          blockTimestamp: block.timestamp,
-          eventType: 'Mint'
-        });
-
         await this.handleEvent({
           type: 'Mint',
           to: to.toLowerCase(),
@@ -162,59 +156,7 @@ export class EventListener {
       }
     });
 
-    // Add raw event logging with more details
-    this.provider.on('debug', (info) => {
-      if (info.action === 'receive') {
-        const receivedTopic = info.topics && info.topics[0];
-        
-        // Let ethers parse the event
-        if (info.address && typeof this.nftContract.target === 'string' && 
-            info.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
-          try {
-            const parsedLog = this.nftContract.interface.parseLog({
-              topics: info.topics || [],
-              data: info.data || '0x'
-            });
-            if (parsedLog) {
-              this.logger.info('Raw event parsed', {
-                name: parsedLog.name,
-                args: parsedLog.args,
-                signature: parsedLog.signature,
-                contractAddress: info.address,
-                allTopics: info.topics,
-                rawData: info.data,
-                matchedSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES]
-              });
-            }
-          } catch (error) {
-            this.logger.error('Failed to parse event', {
-              error,
-              topics: info.topics,
-              data: info.data,
-              contractAddress: info.address,
-              nftContractAddress: this.nftContract.target
-            });
-          }
-        }
-      }
-    });
-
-    // Add logging for contract event registration
-    this.logger.info('Registering contract event handlers', {
-      nftEvents: ['Transfer', 'Mint', 'Burn'],
-      stakingEvents: ['Staked', 'Unstaked'],
-      nftAddress: this.nftContract.target,
-      stakingAddress: this.stakingContract.target
-    });
-
-    // Log when contracts are initialized
-    this.logger.info('Contract instances created', {
-      nftContractAddress: this.nftContract.target,
-      stakingContractAddress: this.stakingContract.target,
-      providerNetwork: await this.provider.getNetwork()
-    });
-
-    // NFT Contract Events
+    // NFT Contract Transfer Event
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
       // Skip transfers to/from staking contract
       if (typeof this.stakingContract.target === 'string' &&
@@ -231,25 +173,8 @@ export class EventListener {
         return;
       }
 
-      this.logger.info('Transfer event detected', {
-        eventName: 'Transfer',
-        contractAddress: event.address,
-        eventTopics: event.topics,
-        from, to, 
-        tokenId: tokenId.toString(), 
-        id: id.toString(),
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      });
-
       try {
         const block = await event.getBlock();
-        this.logger.info('Retrieved block information', {
-          blockNumber: block.number,
-          blockTimestamp: block.timestamp,
-          eventType: 'Transfer'
-        });
-
         await this.handleEvent({
           type: 'Transfer',
           from: from.toLowerCase(),
@@ -276,40 +201,39 @@ export class EventListener {
       }
     });
 
+    // NFT Contract Burn Event
     this.nftContract.on('Burn', async (from, tokenId, id, event) => {
-      await this.handleEvent({
-        type: 'Burn',
-        from: from.toLowerCase(),
-        tokenId: tokenId.toString(),
-        id: id.toString(),
-        timestamp: (await event.getBlock()).timestamp,
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber,
-        transactionIndex: event.transactionIndex
-      });
+      try {
+        const block = await event.getBlock();
+        await this.handleEvent({
+          type: 'Burn',
+          from: from.toLowerCase(),
+          tokenId: tokenId.toString(),
+          id: id.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: event.blockNumber,
+          transactionIndex: event.transactionIndex
+        });
+      } catch (error) {
+        this.logger.error('Error in Burn event handler', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          eventData: {
+            from, tokenId: tokenId.toString(), id: id.toString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          }
+        });
+      }
     });
 
     // Staking Contract Events
     this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
-      this.logger.info('Staked event detected', {
-        eventName: 'Staked',
-        contractAddress: event.address,
-        eventTopics: event.topics,
-        staker, 
-        tokenId: tokenId.toString(), 
-        id: id.toString(),
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      });
-
       try {
         const block = await event.getBlock();
-        this.logger.info('Retrieved block information', {
-          blockNumber: block.number,
-          blockTimestamp: block.timestamp,
-          eventType: 'Staked'
-        });
-
         await this.handleEvent({
           type: 'Staked',
           staker: staker.toLowerCase(),
@@ -336,26 +260,29 @@ export class EventListener {
     });
 
     this.stakingContract.on('Unstaked', async (staker, tokenId, id, event) => {
-      await this.handleEvent({
-        type: 'Unstaked',
-        staker: staker.toLowerCase(),
-        tokenId: tokenId.toString(),
-        id: id.toString(),
-        timestamp: (await event.getBlock()).timestamp,
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber,
-        transactionIndex: event.transactionIndex
-      });
-    });
-
-    // Add provider-level debug logging
-    this.provider.on('debug', (info) => {
-      if (info.action === 'receive') {
-        this.logger.info('Raw event received', {
-          action: info.action,
-          contractAddress: info.address,
-          topics: info.topics,
-          data: info.data
+      try {
+        const block = await event.getBlock();
+        await this.handleEvent({
+          type: 'Unstaked',
+          staker: staker.toLowerCase(),
+          tokenId: tokenId.toString(),
+          id: id.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: event.blockNumber,
+          transactionIndex: event.transactionIndex
+        });
+      } catch (error) {
+        this.logger.error('Error in Unstaked event handler', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          eventData: {
+            staker, tokenId: tokenId.toString(), id: id.toString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          }
         });
       }
     });
@@ -364,14 +291,6 @@ export class EventListener {
     this.provider.on('error', (error) => {
       this.logger.error('Provider error', { error });
     });
-
-    // Add WebSocket error handling
-    const ws = this.provider.websocket as WebSocket;
-    if (ws) {
-      ws.onerror = (error) => {
-        this.logger.error('WebSocket error', { error });
-      };
-    }
 
     this.logger.info('Event listeners setup complete', {
       nftContractAddress: this.nftContract.target,
