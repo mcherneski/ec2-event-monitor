@@ -487,7 +487,7 @@ export class EventListener {
             ([_, sig]) => sig === eventSignature
           )?.[0];
 
-          this.logger.info('Processing blockchain event', {
+          this.logger.info('Raw blockchain event received', {
             contractAddress: result.address,
             topics: result.topics,
             data: result.data,
@@ -499,44 +499,6 @@ export class EventListener {
             addressMatch: typeof this.nftContract.target === 'string' ? 
               result.address.toLowerCase() === this.nftContract.target.toLowerCase() : false
           });
-
-          // Let ethers parse and handle the event
-          if (typeof this.nftContract.target === 'string' && 
-              result.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
-            try {
-              const parsedLog = this.nftContract.interface.parseLog({
-                topics: result.topics,
-                data: result.data
-              });
-              
-              if (parsedLog) {
-                this.logger.info('Event parsed successfully', {
-                  name: parsedLog.name,
-                  args: parsedLog.args,
-                  signature: parsedLog.signature,
-                  contractAddress: result.address,
-                  allTopics: result.topics,
-                  rawData: result.data,
-                  matchedSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES],
-                  eventFragment: parsedLog.fragment.format()
-                });
-
-                // Let ethers handle the event through its event system
-                this.provider.emit('event', {
-                  ...result,
-                  getBlock: () => this.provider.getBlock(result.blockHash)
-                });
-              }
-            } catch (error) {
-              this.logger.error('Failed to parse NFT contract event', {
-                error,
-                topics: result.topics,
-                data: result.data,
-                contractAddress: result.address,
-                nftContractAddress: this.nftContract.target
-              });
-            }
-          }
         }
       } catch (error) {
         this.logger.error('Error parsing WebSocket message', { error, rawData });
