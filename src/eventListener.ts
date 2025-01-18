@@ -1,4 +1,4 @@
-import { WebSocketProvider, Contract, EventLog, id } from 'ethers';
+import { WebSocketProvider, Contract, EventLog, id, Fragment, EventFragment } from 'ethers';
 import WebSocket from 'ws';
 import { KinesisClient, PutRecordCommand } from '@aws-sdk/client-kinesis';
 import type { Config } from './types/config.js';
@@ -54,19 +54,6 @@ export class EventListener {
         });
       });
 
-      // Log event signatures for comparison
-      this.logger.info('Event signatures', {
-        Transfer: id('Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)'),
-        Burn: id('Burn(address indexed from,uint256 indexed tokenId,uint256 id)'),
-        Mint: id('Mint(address indexed to,uint256 indexed tokenId,uint256 id)'),
-        Staked: id('Staked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
-        Unstaked: id('Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
-        // Add some variations to check
-        TransferIndexed: id('Transfer(address indexed,address indexed,uint256 indexed,uint256)'),
-        StakedIndexed: id('Staked(address indexed,uint256,uint256 indexed)'),
-        UnstakedIndexed: id('Unstaked(address indexed,uint256,uint256 indexed)')
-      });
-
       this.logger.info('Attempting to connect to WebSocket provider', { url: config.wsRpcUrl });
       
       const wsCreator = () => {
@@ -91,32 +78,35 @@ export class EventListener {
             const parsedData = JSON.parse(rawData);
             if (parsedData.method === 'eth_subscription' && parsedData.params?.result) {
               const result = parsedData.params.result;
-              this.logger.info('Parsed WebSocket event', {
+              this.logger.info('Raw blockchain event received', {
                 contractAddress: result.address,
                 topics: result.topics,
-                matchingSignatures: Object.entries(EVENT_SIGNATURES).map(([name, sig]) => ({
-                  name,
-                  signature: sig,
-                  matches: sig === result.topics[0]
-                })),
-                nftContract: this.nftContract.target,
-                stakingContract: this.stakingContract.target,
+                data: result.data,
+                blockNumber: result.blockNumber,
+                transactionHash: result.transactionHash,
+                eventSignatures: EVENT_SIGNATURES,
+                matchingSignature: Object.entries(EVENT_SIGNATURES).find(([_, sig]) => sig === result.topics[0]),
                 isNFTContract: typeof this.nftContract.target === 'string' && result.address.toLowerCase() === this.nftContract.target.toLowerCase(),
                 isStakingContract: typeof this.stakingContract.target === 'string' && result.address.toLowerCase() === this.stakingContract.target.toLowerCase()
               });
+
+              // Log actual event interface from contract
+              if (typeof this.nftContract.target === 'string' && result.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
+                this.logger.info('NFT Contract Interface', {
+                  interface: this.nftContract.interface.format(),
+                  events: this.nftContract.interface.fragments
+                    .filter((f): f is EventFragment => f.type === 'event')
+                    .map(f => ({
+                      name: f.name,
+                      signature: id(f.format()),
+                      format: f.format()
+                    }))
+                });
+              }
             }
           } catch (error) {
             this.logger.error('Error parsing WebSocket message', { error, rawData });
           }
-
-          // Original logging
-          this.logger.info('WebSocket message received', {
-            dataSize: typeof event.data === 'string' ? event.data.length : 
-                      event.data instanceof Buffer ? event.data.length :
-                      event.data instanceof ArrayBuffer ? event.data.byteLength : 'unknown',
-            data: rawData,
-            timestamp: new Date().toISOString()
-          });
         };
         
         ws.onerror = (error: WebSocket.ErrorEvent) => {
