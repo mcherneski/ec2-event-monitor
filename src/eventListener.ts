@@ -8,29 +8,20 @@ import { MetricsPublisher } from './utils/metrics.js';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
-  'event Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)',
-  'event Burn(address indexed from,uint256 indexed tokenId,uint256 id)',
-  'event Mint(address indexed to,uint256 indexed tokenId,uint256 id)',
-  'event Staked(address indexed staker,uint256 tokenId,uint256 indexed id)',
-  'event Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)'
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
+  'event Burn(address indexed from, uint256 indexed tokenId, uint256 id)',
+  'event Mint(address indexed to, uint256 indexed tokenId, uint256 id)',
+  'event Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
+  'event Unstaked(address indexed staker, uint256 tokenId, uint256 indexed id)'
 ];
 
-// Add event signature logging
-const EVENT_SIGNATURES = {
-  Transfer: id('Transfer(address,address,uint256,uint256)'),
-  Burn: id('Burn(address,uint256,uint256)'),
-  Mint: id('Mint(address,uint256,uint256)'),
-  Staked: id('Staked(address,uint256,uint256)'),
-  Unstaked: id('Unstaked(address,uint256,uint256)')
-};
-
-// Add test signatures to compare
-const TEST_SIGNATURES = {
-  Transfer: 'Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)',
-  TransferWithSpaces: 'Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
-  Staked: 'Staked(address indexed staker,uint256 tokenId,uint256 indexed id)',
-  StakedWithSpaces: 'Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
-  ReceivedSignature: '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f'
+// Known signatures from the contract for validation
+const KNOWN_SIGNATURES = {
+  Transfer: '0x9ed053bb818ff08b8353cd46f78db1f0799f31c9e4458fdb425c10eccd2efc44',
+  Burn: '0x49995e5dd6158cf69ad3e9777c46755a1a826a446c6416992167462dad033b2a',
+  Mint: '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f',
+  Staked: '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
+  Unstaked: '0x7fc4727e062e336010f2c282598ef5f14facb3de68cf8195c2f23e1454b2b74e'
 };
 
 export class EventListener {
@@ -47,54 +38,11 @@ export class EventListener {
     this.logger = new Logger('EventListener');
     
     try {
-      // Log the received signature we're trying to match
-      this.logger.info('Received event signature to match', {
-        signature: '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f'
-      });
-
-      // Log Transfer event signatures in different formats
-      const transferFormats = {
-        withIndexed: 'Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
-        withoutSpaces: 'Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)',
-        minimal: 'Transfer(address,address,uint256,uint256)',
-        withoutIndexed: 'Transfer(address from, address to, uint256 tokenId, uint256 id)'
-      };
-
-      Object.entries(transferFormats).forEach(([format, signature]) => {
-        this.logger.info('Transfer event signature format', {
-          format,
-          signature,
-          computedHash: id(signature),
-          matchesReceived: id(signature) === '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f'
-        });
-      });
-
-      // Log all event signatures we're using
-      this.logger.info('Configured event signatures', {
-        Transfer: EVENT_SIGNATURES.Transfer,
-        Burn: EVENT_SIGNATURES.Burn,
-        Mint: EVENT_SIGNATURES.Mint,
-        Staked: EVENT_SIGNATURES.Staked,
-        Unstaked: EVENT_SIGNATURES.Unstaked
-      });
-
       this.logger.info('Starting event listener with config', {
         nftContractAddress: config.nftContractAddress,
         stakingContractAddress: config.stakingContractAddress,
         wsRpcUrl: config.wsRpcUrl,
         kinesisStreamName: config.kinesisStreamName
-      });
-
-      // Log all event signatures we're watching for with their raw computation
-      Object.entries(EVENT_SIGNATURES).forEach(([name, signature]) => {
-        const eventAbi = EVENT_ABIS.find(abi => abi.includes(name));
-        this.logger.info('Event signature details', {
-          name,
-          signature,
-          rawSignature: eventAbi,
-          computedSignature: id(eventAbi || ''),
-          matchesStored: signature === id(eventAbi || '')
-        });
       });
 
       this.logger.info('Attempting to connect to WebSocket provider', { url: config.wsRpcUrl });
@@ -126,25 +74,23 @@ export class EventListener {
                 topics: result.topics,
                 data: result.data,
                 blockNumber: result.blockNumber,
-                transactionHash: result.transactionHash,
-                eventSignatures: EVENT_SIGNATURES,
-                matchingSignature: Object.entries(EVENT_SIGNATURES).find(([_, sig]) => sig === result.topics[0]),
-                isNFTContract: typeof this.nftContract.target === 'string' && result.address.toLowerCase() === this.nftContract.target.toLowerCase(),
-                isStakingContract: typeof this.stakingContract.target === 'string' && result.address.toLowerCase() === this.stakingContract.target.toLowerCase()
+                transactionHash: result.transactionHash
               });
 
-              // Log actual event interface from contract
-              if (typeof this.nftContract.target === 'string' && result.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
-                this.logger.info('NFT Contract Interface', {
-                  interface: this.nftContract.interface.format(),
-                  events: this.nftContract.interface.fragments
-                    .filter((f): f is EventFragment => f.type === 'event')
-                    .map(f => ({
-                      name: f.name,
-                      signature: id(f.format()),
-                      format: f.format()
-                    }))
+              // Let ethers parse the event
+              if (typeof this.nftContract.target === 'string' && 
+                  result.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
+                const parsedLog = this.nftContract.interface.parseLog({
+                  topics: result.topics,
+                  data: result.data
                 });
+                if (parsedLog) {
+                  this.logger.info('Parsed event', {
+                    name: parsedLog.name,
+                    args: parsedLog.args,
+                    signature: parsedLog.signature
+                  });
+                }
               }
             }
           } catch (error) {
@@ -168,47 +114,27 @@ export class EventListener {
         batchMaxCount: 1
       });
       
-      this.logger.info('Provider created', {
-        network: "base-sepolia",
-        wsUrl: this.config.wsRpcUrl
-      });
-      
       this.nftContract = new Contract(config.nftContractAddress, EVENT_ABIS, this.provider);
       this.stakingContract = new Contract(config.stakingContractAddress, EVENT_ABIS, this.provider);
       this.kinesis = new KinesisClient({ region: config.awsRegion });
       this.metrics = new MetricsPublisher(config.awsRegion, 'NGU/BlockchainEvents');
       
-      // Log contract interfaces and event signatures
-      this.logger.info('NFT Contract Interface', {
-        address: this.nftContract.target,
-        interface: this.nftContract.interface.format(),
-        events: this.nftContract.interface.fragments
+      // Validate computed signatures against known signatures
+      this.logger.info('Validating event signatures', {
+        nftEvents: this.nftContract.interface.fragments
           .filter((f): f is EventFragment => f.type === 'event')
-          .map(f => ({
-            name: f.name,
-            signature: id(f.format('minimal')), // Use minimal format to match chain format
-            fullFormat: f.format(),
-            minimalFormat: f.format('minimal')
-          }))
-      });
-
-      this.logger.info('Staking Contract Interface', {
-        address: this.stakingContract.target,
-        interface: this.stakingContract.interface.format(),
-        events: this.stakingContract.interface.fragments
-          .filter((f): f is EventFragment => f.type === 'event')
-          .map(f => ({
-            name: f.name,
-            signature: id(f.format('minimal')), // Use minimal format to match chain format
-            fullFormat: f.format(),
-            minimalFormat: f.format('minimal')
+          .map(event => ({
+            name: event.name,
+            format: event.format(),
+            computedSignature: id(event.format()),
+            knownSignature: KNOWN_SIGNATURES[event.name as keyof typeof KNOWN_SIGNATURES],
+            matches: id(event.format()) === KNOWN_SIGNATURES[event.name as keyof typeof KNOWN_SIGNATURES]
           }))
       });
 
       this.logger.info('Contracts initialized', {
         nftAddress: this.nftContract.target,
-        stakingAddress: this.stakingContract.target,
-        eventSignatures: EVENT_SIGNATURES
+        stakingAddress: this.stakingContract.target
       });
     } catch (error) {
       this.logger.error('Failed to initialize WebSocket provider', { error });
@@ -232,33 +158,32 @@ export class EventListener {
     this.provider.on('debug', (info) => {
       if (info.action === 'receive') {
         const receivedTopic = info.topics && info.topics[0];
-        const matchingEvent = Object.entries(EVENT_SIGNATURES).find(([name, sig]) => sig === receivedTopic);
         
-        this.logger.info('Raw event received', {
-          eventTopic: receivedTopic,
-          contractAddress: info.address,
-          watchedContracts: {
-            nft: this.nftContract.target,
-            staking: this.stakingContract.target
-          },
-          matchingEventName: matchingEvent ? matchingEvent[0] : 'none',
-          allTopics: info.topics,
-          rawData: info.data
-        });
-
-        // Log if contract address matches
-        if (info.address) {
-          const isNFTContract = typeof this.nftContract.target === 'string' && 
-            info.address.toLowerCase() === this.nftContract.target.toLowerCase();
-          const isStakingContract = typeof this.stakingContract.target === 'string' && 
-            info.address.toLowerCase() === this.stakingContract.target.toLowerCase();
-          this.logger.info('Contract address check', {
-            receivedAddress: info.address,
-            isNFTContract,
-            isStakingContract,
-            nftContractAddress: this.nftContract.target,
-            stakingContractAddress: this.stakingContract.target
-          });
+        // Let ethers parse the event
+        if (info.address && typeof this.nftContract.target === 'string' && 
+            info.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
+          try {
+            const parsedLog = this.nftContract.interface.parseLog({
+              topics: info.topics || [],
+              data: info.data || '0x'
+            });
+            if (parsedLog) {
+              this.logger.info('Raw event parsed', {
+                name: parsedLog.name,
+                args: parsedLog.args,
+                signature: parsedLog.signature,
+                contractAddress: info.address,
+                allTopics: info.topics,
+                rawData: info.data
+              });
+            }
+          } catch (error) {
+            this.logger.error('Failed to parse event', {
+              error,
+              topics: info.topics,
+              data: info.data
+            });
+          }
         }
       }
     });
@@ -280,7 +205,7 @@ export class EventListener {
 
     // NFT Contract Events
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
-      this.logger.info('Transfer event detected - INITIAL HANDLER', {
+      this.logger.info('Transfer event detected', {
         eventName: 'Transfer',
         contractAddress: event.address,
         eventTopics: event.topics,
@@ -353,7 +278,7 @@ export class EventListener {
 
     // Staking Contract Events
     this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
-      this.logger.info('Staked event detected - INITIAL HANDLER', {
+      this.logger.info('Staked event detected', {
         eventName: 'Staked',
         contractAddress: event.address,
         eventTopics: event.topics,
