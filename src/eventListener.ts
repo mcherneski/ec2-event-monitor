@@ -220,23 +220,49 @@ export class EventListener {
 
     // NFT Contract Events
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
-      this.logger.info('Transfer event detected', {
+      this.logger.info('Transfer event detected - INITIAL HANDLER', {
         eventName: 'Transfer',
         contractAddress: event.address,
         eventTopics: event.topics,
-        from, to, tokenId: tokenId.toString(), id: id.toString()
-      });
-      await this.handleEvent({
-        type: 'Transfer',
-        from: from.toLowerCase(),
-        to: to.toLowerCase(),
-        tokenId: tokenId.toString(),
+        from, to, 
+        tokenId: tokenId.toString(), 
         id: id.toString(),
-        timestamp: (await event.getBlock()).timestamp,
-        transactionHash: event.transactionHash,
         blockNumber: event.blockNumber,
-        transactionIndex: event.transactionIndex
+        transactionHash: event.transactionHash
       });
+
+      try {
+        const block = await event.getBlock();
+        this.logger.info('Retrieved block information', {
+          blockNumber: block.number,
+          blockTimestamp: block.timestamp,
+          eventType: 'Transfer'
+        });
+
+        await this.handleEvent({
+          type: 'Transfer',
+          from: from.toLowerCase(),
+          to: to.toLowerCase(),
+          tokenId: tokenId.toString(),
+          id: id.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: event.blockNumber,
+          transactionIndex: event.transactionIndex
+        });
+      } catch (error) {
+        this.logger.error('Error in Transfer event handler', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          eventData: {
+            from, to, tokenId: tokenId.toString(), id: id.toString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          }
+        });
+      }
     });
 
     this.nftContract.on('Mint', async (to, tokenId, id, event) => {
@@ -267,22 +293,48 @@ export class EventListener {
 
     // Staking Contract Events
     this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
-      this.logger.info('Staked event detected', {
+      this.logger.info('Staked event detected - INITIAL HANDLER', {
         eventName: 'Staked',
         contractAddress: event.address,
         eventTopics: event.topics,
-        staker, tokenId: tokenId.toString(), id: id.toString()
-      });
-      await this.handleEvent({
-        type: 'Staked',
-        staker: staker.toLowerCase(),
-        tokenId: tokenId.toString(),
+        staker, 
+        tokenId: tokenId.toString(), 
         id: id.toString(),
-        timestamp: (await event.getBlock()).timestamp,
-        transactionHash: event.transactionHash,
         blockNumber: event.blockNumber,
-        transactionIndex: event.transactionIndex
+        transactionHash: event.transactionHash
       });
+
+      try {
+        const block = await event.getBlock();
+        this.logger.info('Retrieved block information', {
+          blockNumber: block.number,
+          blockTimestamp: block.timestamp,
+          eventType: 'Staked'
+        });
+
+        await this.handleEvent({
+          type: 'Staked',
+          staker: staker.toLowerCase(),
+          tokenId: tokenId.toString(),
+          id: id.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: event.blockNumber,
+          transactionIndex: event.transactionIndex
+        });
+      } catch (error) {
+        this.logger.error('Error in Staked event handler', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          eventData: {
+            staker, tokenId: tokenId.toString(), id: id.toString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          }
+        });
+      }
     });
 
     this.stakingContract.on('Unstaked', async (staker, tokenId, id, event) => {
@@ -319,17 +371,24 @@ export class EventListener {
 
   private async handleEvent(event: OnChainEvent) {
     try {
-      this.logger.info('Processing blockchain event', {
+      this.logger.info('ENTERING handleEvent', {
         type: event.type,
         tokenId: event.tokenId,
-        eventData: JSON.stringify(event),
+        blockNumber: event.blockNumber,
+        transactionHash: event.transactionHash,
         timestamp: new Date().toISOString()
       });
 
+      // Validate Kinesis client
+      if (!this.kinesis) {
+        throw new Error('Kinesis client is not initialized');
+      }
+
       // Log Kinesis configuration
-      this.logger.info('Preparing Kinesis record', {
+      this.logger.info('Kinesis configuration check', {
         streamName: this.config.kinesisStreamName,
         region: this.kinesis.config.region(),
+        credentials: await this.kinesis.config.credentials(),
         eventType: event.type
       });
 
@@ -339,7 +398,7 @@ export class EventListener {
         Data: Buffer.from(JSON.stringify(event))
       };
 
-      this.logger.info('Sending record to Kinesis', {
+      this.logger.info('Attempting to send record to Kinesis', {
         streamName: record.StreamName,
         partitionKey: record.PartitionKey,
         dataSize: record.Data.length,
@@ -347,16 +406,31 @@ export class EventListener {
         timestamp: new Date().toISOString()
       });
 
-      // Send to Kinesis
-      const result = await this.kinesis.send(new PutRecordCommand(record));
-      
-      this.logger.info('Successfully sent to Kinesis', { 
-        sequenceNumber: result.SequenceNumber,
-        shardId: result.ShardId,
-        timestamp: new Date().toISOString(),
-        eventType: event.type,
-        streamName: this.config.kinesisStreamName
-      });
+      // Send to Kinesis with detailed error handling
+      try {
+        const result = await this.kinesis.send(new PutRecordCommand(record));
+        this.logger.info('Successfully sent to Kinesis', { 
+          sequenceNumber: result.SequenceNumber,
+          shardId: result.ShardId,
+          timestamp: new Date().toISOString(),
+          eventType: event.type,
+          streamName: this.config.kinesisStreamName
+        });
+      } catch (kinesisError) {
+        this.logger.error('Kinesis PutRecord failed', {
+          error: kinesisError instanceof Error ? {
+            message: kinesisError.message,
+            name: kinesisError.name,
+            stack: kinesisError.stack
+          } : kinesisError,
+          record: {
+            streamName: record.StreamName,
+            partitionKey: record.PartitionKey,
+            dataSize: record.Data.length
+          }
+        });
+        throw kinesisError;
+      }
 
       // Publish metrics
       await this.metrics.publishMetric({
