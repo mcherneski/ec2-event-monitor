@@ -60,84 +60,6 @@ export class EventListener {
           });
         };
         
-        ws.onmessage = (event) => {
-          const rawData = typeof event.data === 'string' ? event.data : 
-                         event.data instanceof Buffer ? event.data.toString() :
-                         event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format';
-          
-          try {
-            const parsedData = JSON.parse(rawData);
-            if (parsedData.method === 'eth_subscription' && parsedData.params?.result) {
-              const result = parsedData.params.result;
-              const eventSignature = result.topics[0];
-              
-              // Find which event this signature corresponds to
-              const eventType = Object.entries(KNOWN_SIGNATURES).find(
-                ([_, sig]) => sig === eventSignature
-              )?.[0];
-
-              this.logger.info('Processing blockchain event', {
-                contractAddress: result.address,
-                topics: result.topics,
-                data: result.data,
-                blockNumber: result.blockNumber,
-                transactionHash: result.transactionHash,
-                eventType,
-                matchedSignature: eventSignature,
-                nftContractAddress: this.nftContract.target,
-                addressMatch: typeof this.nftContract.target === 'string' ? 
-                  result.address.toLowerCase() === this.nftContract.target.toLowerCase() : false
-              });
-
-              // Let ethers parse the event
-              if (typeof this.nftContract.target === 'string' && 
-                  result.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
-                try {
-                  const parsedLog = this.nftContract.interface.parseLog({
-                    topics: result.topics,
-                    data: result.data
-                  });
-                  if (parsedLog) {
-                    this.logger.info('Event parsed successfully', {
-                      name: parsedLog.name,
-                      args: parsedLog.args,
-                      signature: parsedLog.signature,
-                      contractAddress: result.address,
-                      allTopics: result.topics,
-                      rawData: result.data,
-                      matchedSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES],
-                      eventFragment: parsedLog.fragment.format()
-                    });
-
-                    // Emit the event manually to trigger the handler
-                    const args = [...parsedLog.args, {
-                      ...result,
-                      getBlock: () => this.provider.getBlock(result.blockHash)
-                    }];
-                    
-                    this.logger.info('Attempting to emit event', {
-                      eventName: parsedLog.name,
-                      args: args.map(arg => arg?.toString())
-                    });
-                    
-                    this.nftContract.emit(parsedLog.name, ...args);
-                  }
-                } catch (error) {
-                  this.logger.error('Failed to parse NFT contract event', {
-                    error,
-                    topics: result.topics,
-                    data: result.data,
-                    contractAddress: result.address,
-                    nftContractAddress: this.nftContract.target
-                  });
-                }
-              }
-            }
-          } catch (error) {
-            this.logger.error('Error parsing WebSocket message', { error, rawData });
-          }
-        };
-        
         ws.onerror = (error: WebSocket.ErrorEvent) => {
           this.logger.error('WebSocket connection error in constructor', {
             error,
@@ -554,13 +476,71 @@ export class EventListener {
                       event.data instanceof Buffer ? event.data.toString() :
                       event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format';
       
-      this.logger.info('WebSocket message received', {
-        dataSize: typeof event.data === 'string' ? event.data.length : 
-                  event.data instanceof Buffer ? event.data.length :
-                  event.data instanceof ArrayBuffer ? event.data.byteLength : 'unknown',
-        data: rawData,
-        timestamp: new Date().toISOString()
-      });
+      try {
+        const parsedData = JSON.parse(rawData);
+        if (parsedData.method === 'eth_subscription' && parsedData.params?.result) {
+          const result = parsedData.params.result;
+          const eventSignature = result.topics[0];
+          
+          // Find which event this signature corresponds to
+          const eventType = Object.entries(KNOWN_SIGNATURES).find(
+            ([_, sig]) => sig === eventSignature
+          )?.[0];
+
+          this.logger.info('Processing blockchain event', {
+            contractAddress: result.address,
+            topics: result.topics,
+            data: result.data,
+            blockNumber: result.blockNumber,
+            transactionHash: result.transactionHash,
+            eventType,
+            matchedSignature: eventSignature,
+            nftContractAddress: this.nftContract.target,
+            addressMatch: typeof this.nftContract.target === 'string' ? 
+              result.address.toLowerCase() === this.nftContract.target.toLowerCase() : false
+          });
+
+          // Let ethers parse and handle the event
+          if (typeof this.nftContract.target === 'string' && 
+              result.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
+            try {
+              const parsedLog = this.nftContract.interface.parseLog({
+                topics: result.topics,
+                data: result.data
+              });
+              
+              if (parsedLog) {
+                this.logger.info('Event parsed successfully', {
+                  name: parsedLog.name,
+                  args: parsedLog.args,
+                  signature: parsedLog.signature,
+                  contractAddress: result.address,
+                  allTopics: result.topics,
+                  rawData: result.data,
+                  matchedSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES],
+                  eventFragment: parsedLog.fragment.format()
+                });
+
+                // Let ethers handle the event through its event system
+                this.provider.emit('event', {
+                  ...result,
+                  getBlock: () => this.provider.getBlock(result.blockHash)
+                });
+              }
+            } catch (error) {
+              this.logger.error('Failed to parse NFT contract event', {
+                error,
+                topics: result.topics,
+                data: result.data,
+                contractAddress: result.address,
+                nftContractAddress: this.nftContract.target
+              });
+            }
+          }
+        }
+      } catch (error) {
+        this.logger.error('Error parsing WebSocket message', { error, rawData });
+      }
     };
     
     ws.onerror = async (error: WebSocket.ErrorEvent) => {
