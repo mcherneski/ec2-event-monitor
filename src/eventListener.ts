@@ -390,40 +390,6 @@ export class EventListener {
   private async monitorConnection() {
     const ws = this.provider.websocket as WebSocket;
     
-    ws.onmessage = (event) => {
-      const rawData = typeof event.data === 'string' ? event.data : 
-                      event.data instanceof Buffer ? event.data.toString() :
-                      event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format';
-      
-      try {
-        const parsedData = JSON.parse(rawData);
-        if (parsedData.method === 'eth_subscription' && parsedData.params?.result) {
-          const result = parsedData.params.result;
-          const eventSignature = result.topics[0];
-          
-          // Find which event this signature corresponds to
-          const eventType = Object.entries(KNOWN_SIGNATURES).find(
-            ([_, sig]) => sig === eventSignature
-          )?.[0];
-
-          this.logger.info('Raw blockchain event received', {
-            contractAddress: result.address,
-            topics: result.topics,
-            data: result.data,
-            blockNumber: result.blockNumber,
-            transactionHash: result.transactionHash,
-            eventType,
-            matchedSignature: eventSignature,
-            nftContractAddress: this.nftContract.target,
-            addressMatch: typeof this.nftContract.target === 'string' ? 
-              result.address.toLowerCase() === this.nftContract.target.toLowerCase() : false
-          });
-        }
-      } catch (error) {
-        this.logger.error('Error parsing WebSocket message', { error, rawData });
-      }
-    };
-    
     ws.onerror = async (error: WebSocket.ErrorEvent) => {
       this.logger.error('WebSocket connection error', {
         error,
