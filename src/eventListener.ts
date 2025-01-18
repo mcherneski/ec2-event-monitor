@@ -69,26 +69,66 @@ export class EventListener {
             const parsedData = JSON.parse(rawData);
             if (parsedData.method === 'eth_subscription' && parsedData.params?.result) {
               const result = parsedData.params.result;
+              const eventSignature = result.topics[0];
+              
+              // Find which event this signature corresponds to
+              const eventType = Object.entries(KNOWN_SIGNATURES).find(
+                ([_, sig]) => sig === eventSignature
+              )?.[0];
+
               this.logger.info('Raw blockchain event received', {
                 contractAddress: result.address,
                 topics: result.topics,
                 data: result.data,
                 blockNumber: result.blockNumber,
-                transactionHash: result.transactionHash
+                transactionHash: result.transactionHash,
+                eventType,
+                matchedSignature: eventSignature
               });
 
               // Let ethers parse the event
               if (typeof this.nftContract.target === 'string' && 
                   result.address.toLowerCase() === this.nftContract.target.toLowerCase()) {
-                const parsedLog = this.nftContract.interface.parseLog({
-                  topics: result.topics,
-                  data: result.data
-                });
-                if (parsedLog) {
-                  this.logger.info('Parsed event', {
-                    name: parsedLog.name,
-                    args: parsedLog.args,
-                    signature: parsedLog.signature
+                try {
+                  const parsedLog = this.nftContract.interface.parseLog({
+                    topics: result.topics,
+                    data: result.data
+                  });
+                  if (parsedLog) {
+                    this.logger.info('Parsed NFT contract event', {
+                      name: parsedLog.name,
+                      args: parsedLog.args,
+                      signature: parsedLog.signature,
+                      matchedKnownSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES]
+                    });
+                  }
+                } catch (parseError) {
+                  this.logger.error('Failed to parse NFT contract event', {
+                    error: parseError,
+                    topics: result.topics,
+                    data: result.data
+                  });
+                }
+              } else if (typeof this.stakingContract.target === 'string' && 
+                        result.address.toLowerCase() === this.stakingContract.target.toLowerCase()) {
+                try {
+                  const parsedLog = this.stakingContract.interface.parseLog({
+                    topics: result.topics,
+                    data: result.data
+                  });
+                  if (parsedLog) {
+                    this.logger.info('Parsed staking contract event', {
+                      name: parsedLog.name,
+                      args: parsedLog.args,
+                      signature: parsedLog.signature,
+                      matchedKnownSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES]
+                    });
+                  }
+                } catch (parseError) {
+                  this.logger.error('Failed to parse staking contract event', {
+                    error: parseError,
+                    topics: result.topics,
+                    data: result.data
                   });
                 }
               }
@@ -154,6 +194,18 @@ export class EventListener {
       stakingContractAddress: this.stakingContract.target
     });
 
+    // Log event interface details
+    this.logger.info('NFT Contract event interface', {
+      events: this.nftContract.interface.fragments
+        .filter((f): f is EventFragment => f.type === 'event')
+        .map(event => ({
+          name: event.name,
+          format: event.format(),
+          signature: id(event.format()),
+          topicHash: this.nftContract.interface.getEvent(event.name)?.topicHash
+        }))
+    });
+
     // Add raw event logging with more details
     this.provider.on('debug', (info) => {
       if (info.action === 'receive') {
@@ -174,14 +226,17 @@ export class EventListener {
                 signature: parsedLog.signature,
                 contractAddress: info.address,
                 allTopics: info.topics,
-                rawData: info.data
+                rawData: info.data,
+                matchedSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES]
               });
             }
           } catch (error) {
             this.logger.error('Failed to parse event', {
               error,
               topics: info.topics,
-              data: info.data
+              data: info.data,
+              contractAddress: info.address,
+              nftContractAddress: this.nftContract.target
             });
           }
         }
@@ -266,16 +321,48 @@ export class EventListener {
     });
 
     this.nftContract.on('Mint', async (to, tokenId, id, event) => {
-      await this.handleEvent({
-        type: 'Mint',
-        to: to.toLowerCase(),
+      this.logger.info('Mint event detected', {
+        eventName: 'Mint',
+        contractAddress: event.address,
+        eventTopics: event.topics,
+        to,
         tokenId: tokenId.toString(),
         id: id.toString(),
-        timestamp: (await event.getBlock()).timestamp,
-        transactionHash: event.transactionHash,
         blockNumber: event.blockNumber,
-        transactionIndex: event.transactionIndex
+        transactionHash: event.transactionHash
       });
+
+      try {
+        const block = await event.getBlock();
+        this.logger.info('Retrieved block information for Mint', {
+          blockNumber: block.number,
+          blockTimestamp: block.timestamp,
+          eventType: 'Mint'
+        });
+
+        await this.handleEvent({
+          type: 'Mint',
+          to: to.toLowerCase(),
+          tokenId: tokenId.toString(),
+          id: id.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: event.blockNumber,
+          transactionIndex: event.transactionIndex
+        });
+      } catch (error) {
+        this.logger.error('Error in Mint event handler', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          eventData: {
+            to, tokenId: tokenId.toString(), id: id.toString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          }
+        });
+      }
     });
 
     this.nftContract.on('Burn', async (from, tokenId, id, event) => {
