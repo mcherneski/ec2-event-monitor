@@ -429,8 +429,8 @@ export class EventListener {
     // Add provider-level debug logging
     this.provider.on('debug', (info) => {
       if (info.action === 'receive') {
-        const receivedTopic = info.topics && info.topics[0];
         this.logger.info('Raw event received', {
+          action: info.action,
           contractAddress: info.address,
           topics: info.topics,
           data: info.data
@@ -550,13 +550,15 @@ export class EventListener {
     const ws = this.provider.websocket as WebSocket;
     
     ws.onmessage = (event) => {
+      const rawData = typeof event.data === 'string' ? event.data : 
+                      event.data instanceof Buffer ? event.data.toString() :
+                      event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format';
+      
       this.logger.info('WebSocket message received', {
         dataSize: typeof event.data === 'string' ? event.data.length : 
                   event.data instanceof Buffer ? event.data.length :
                   event.data instanceof ArrayBuffer ? event.data.byteLength : 'unknown',
-        data: typeof event.data === 'string' ? event.data : 
-              event.data instanceof Buffer ? event.data.toString() :
-              event.data instanceof ArrayBuffer ? Buffer.from(event.data).toString() : 'unknown format',
+        data: rawData,
         timestamp: new Date().toISOString()
       });
     };
