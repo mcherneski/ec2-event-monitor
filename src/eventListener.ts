@@ -17,11 +17,11 @@ const EVENT_ABIS = [
 
 // Add event signature logging
 const EVENT_SIGNATURES = {
-  Transfer: id('Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)'),
-  Burn: id('Burn(address indexed from,uint256 indexed tokenId,uint256 id)'),
-  Mint: id('Mint(address indexed to,uint256 indexed tokenId,uint256 id)'),
-  Staked: id('Staked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
-  Unstaked: id('Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)')
+  Transfer: id('Transfer(address,address,uint256,uint256)'),
+  Burn: id('Burn(address,uint256,uint256)'),
+  Mint: id('Mint(address,uint256,uint256)'),
+  Staked: id('Staked(address,uint256,uint256)'),
+  Unstaked: id('Unstaked(address,uint256,uint256)')
 };
 
 // Add test signatures to compare
@@ -159,6 +159,33 @@ export class EventListener {
       this.kinesis = new KinesisClient({ region: config.awsRegion });
       this.metrics = new MetricsPublisher(config.awsRegion, 'NGU/BlockchainEvents');
       
+      // Log contract interfaces and event signatures
+      this.logger.info('NFT Contract Interface', {
+        address: this.nftContract.target,
+        interface: this.nftContract.interface.format(),
+        events: this.nftContract.interface.fragments
+          .filter((f): f is EventFragment => f.type === 'event')
+          .map(f => ({
+            name: f.name,
+            signature: id(f.format('minimal')), // Use minimal format to match chain format
+            fullFormat: f.format(),
+            minimalFormat: f.format('minimal')
+          }))
+      });
+
+      this.logger.info('Staking Contract Interface', {
+        address: this.stakingContract.target,
+        interface: this.stakingContract.interface.format(),
+        events: this.stakingContract.interface.fragments
+          .filter((f): f is EventFragment => f.type === 'event')
+          .map(f => ({
+            name: f.name,
+            signature: id(f.format('minimal')), // Use minimal format to match chain format
+            fullFormat: f.format(),
+            minimalFormat: f.format('minimal')
+          }))
+      });
+
       this.logger.info('Contracts initialized', {
         nftAddress: this.nftContract.target,
         stakingAddress: this.stakingContract.target,
