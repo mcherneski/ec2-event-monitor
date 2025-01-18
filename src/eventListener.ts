@@ -8,11 +8,11 @@ import { MetricsPublisher } from './utils/metrics.js';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
-  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
-  'event Burn(address indexed from, uint256 indexed tokenId, uint256 id)',
-  'event Mint(address indexed to, uint256 indexed tokenId, uint256 id)',
-  'event Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
-  'event Unstaked(address indexed staker, uint256 tokenId, uint256 indexed id)'
+  'event Transfer(address,address,uint256,uint256)',
+  'event Burn(address,uint256,uint256)',
+  'event Mint(address,uint256,uint256)',
+  'event Staked(address,uint256,uint256)',
+  'event Unstaked(address,uint256,uint256)'
 ];
 
 // Known signatures from the contract for validation
