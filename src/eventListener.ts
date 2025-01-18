@@ -299,8 +299,8 @@ export class EventListener {
   }
 
   private async handleEvent(event: OnChainEvent) {
-    // Construct the stream name based on environment (standardizing on 'prod')
-    const streamName = `${this.config.environment === 'prod' ? 'ngu-points-system-events' : 'ngu-points-system-events-dev'}`;
+    // Construct the stream name based on environment (accepting both 'prod' and 'production')
+    const streamName = `${this.config.environment === 'prod' || this.config.environment === 'production' ? 'ngu-points-system-events' : 'ngu-points-system-events-dev'}`;
 
     try {
       this.logger.info('ENTERING handleEvent', {
