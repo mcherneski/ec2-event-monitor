@@ -76,14 +76,17 @@ export class EventListener {
                 ([_, sig]) => sig === eventSignature
               )?.[0];
 
-              this.logger.info('Raw blockchain event received', {
+              this.logger.info('Processing blockchain event', {
                 contractAddress: result.address,
                 topics: result.topics,
                 data: result.data,
                 blockNumber: result.blockNumber,
                 transactionHash: result.transactionHash,
                 eventType,
-                matchedSignature: eventSignature
+                matchedSignature: eventSignature,
+                nftContractAddress: this.nftContract.target,
+                addressMatch: typeof this.nftContract.target === 'string' ? 
+                  result.address.toLowerCase() === this.nftContract.target.toLowerCase() : false
               });
 
               // Let ethers parse the event
@@ -95,40 +98,37 @@ export class EventListener {
                     data: result.data
                   });
                   if (parsedLog) {
-                    this.logger.info('Parsed NFT contract event', {
+                    this.logger.info('Event parsed successfully', {
                       name: parsedLog.name,
                       args: parsedLog.args,
                       signature: parsedLog.signature,
-                      matchedKnownSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES]
+                      contractAddress: result.address,
+                      allTopics: result.topics,
+                      rawData: result.data,
+                      matchedSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES],
+                      eventFragment: parsedLog.fragment.format()
                     });
+
+                    // Emit the event manually to trigger the handler
+                    const args = [...parsedLog.args, {
+                      ...result,
+                      getBlock: () => this.provider.getBlock(result.blockHash)
+                    }];
+                    
+                    this.logger.info('Attempting to emit event', {
+                      eventName: parsedLog.name,
+                      args: args.map(arg => arg?.toString())
+                    });
+                    
+                    this.nftContract.emit(parsedLog.name, ...args);
                   }
-                } catch (parseError) {
+                } catch (error) {
                   this.logger.error('Failed to parse NFT contract event', {
-                    error: parseError,
+                    error,
                     topics: result.topics,
-                    data: result.data
-                  });
-                }
-              } else if (typeof this.stakingContract.target === 'string' && 
-                        result.address.toLowerCase() === this.stakingContract.target.toLowerCase()) {
-                try {
-                  const parsedLog = this.stakingContract.interface.parseLog({
-                    topics: result.topics,
-                    data: result.data
-                  });
-                  if (parsedLog) {
-                    this.logger.info('Parsed staking contract event', {
-                      name: parsedLog.name,
-                      args: parsedLog.args,
-                      signature: parsedLog.signature,
-                      matchedKnownSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES]
-                    });
-                  }
-                } catch (parseError) {
-                  this.logger.error('Failed to parse staking contract event', {
-                    error: parseError,
-                    topics: result.topics,
-                    data: result.data
+                    data: result.data,
+                    contractAddress: result.address,
+                    nftContractAddress: this.nftContract.target
                   });
                 }
               }
