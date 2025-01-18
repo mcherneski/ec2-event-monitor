@@ -8,11 +8,11 @@ import { MetricsPublisher } from './utils/metrics.js';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
-  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
-  'event Burn(address indexed from, uint256 indexed tokenId, uint256 id)',
-  'event Mint(address indexed to, uint256 indexed tokenId, uint256 id)',
-  'event Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
-  'event Unstaked(address indexed staker, uint256 tokenId, uint256 indexed id)'
+  'event Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)',
+  'event Burn(address indexed from,uint256 indexed tokenId,uint256 id)',
+  'event Mint(address indexed to,uint256 indexed tokenId,uint256 id)',
+  'event Staked(address indexed staker,uint256 tokenId,uint256 indexed id)',
+  'event Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)'
 ];
 
 // Add event signature logging
@@ -22,6 +22,15 @@ const EVENT_SIGNATURES = {
   Mint: id('Mint(address indexed to,uint256 indexed tokenId,uint256 id)'),
   Staked: id('Staked(address indexed staker,uint256 tokenId,uint256 indexed id)'),
   Unstaked: id('Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)')
+};
+
+// Add test signatures to compare
+const TEST_SIGNATURES = {
+  Transfer: 'Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)',
+  TransferWithSpaces: 'Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
+  Staked: 'Staked(address indexed staker,uint256 tokenId,uint256 indexed id)',
+  StakedWithSpaces: 'Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
+  ReceivedSignature: '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f'
 };
 
 export class EventListener {
@@ -38,24 +47,16 @@ export class EventListener {
     this.logger = new Logger('EventListener');
     
     try {
-      // Test event signature computation
-      const testSignatures = {
-        Transfer: 'Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)',
-        Burn: 'Burn(address indexed from,uint256 indexed tokenId,uint256 id)',
-        Mint: 'Mint(address indexed to,uint256 indexed tokenId,uint256 id)',
-        Staked: 'Staked(address indexed staker,uint256 tokenId,uint256 indexed id)',
-        Unstaked: 'Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)'
-      };
-
-      // Log each signature computation
-      Object.entries(testSignatures).forEach(([name, sig]) => {
-        this.logger.info('Computing event signature', {
-          name,
-          rawSignature: sig,
-          computedSignature: id(sig),
-          storedSignature: EVENT_SIGNATURES[name as keyof typeof EVENT_SIGNATURES],
-          receivedSignature: '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f'
-        });
+      // Log test signature computations
+      Object.entries(TEST_SIGNATURES).forEach(([name, sig]) => {
+        if (name !== 'ReceivedSignature') {
+          this.logger.info('Test signature computation', {
+            name,
+            signature: sig,
+            computed: id(sig),
+            matchesReceived: id(sig) === TEST_SIGNATURES.ReceivedSignature
+          });
+        }
       });
 
       this.logger.info('Starting event listener with config', {
