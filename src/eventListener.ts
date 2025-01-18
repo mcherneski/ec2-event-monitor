@@ -278,17 +278,6 @@ export class EventListener {
                 rawData: info.data,
                 matchedSignature: KNOWN_SIGNATURES[parsedLog.name as keyof typeof KNOWN_SIGNATURES]
               });
-
-              // Manually emit the event
-              if (parsedLog.name === 'Mint') {
-                const [to, tokenId, id] = parsedLog.args;
-                this.nftContract.emit(parsedLog.name, to, tokenId, id, {
-                  ...info,
-                  address: info.address,
-                  topics: info.topics || [],
-                  data: info.data || '0x'
-                });
-              }
             }
           } catch (error) {
             this.logger.error('Failed to parse event', {
