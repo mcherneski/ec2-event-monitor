@@ -45,12 +45,15 @@ export class EventListener {
         kinesisStreamName: config.kinesisStreamName
       });
 
-      // Log all event signatures we're watching for
+      // Log all event signatures we're watching for with their raw computation
       Object.entries(EVENT_SIGNATURES).forEach(([name, signature]) => {
-        this.logger.info('Watching for event', {
+        const eventAbi = EVENT_ABIS.find(abi => abi.includes(name));
+        this.logger.info('Event signature details', {
           name,
           signature,
-          abi: EVENT_ABIS.find(abi => abi.includes(name))
+          rawSignature: eventAbi,
+          computedSignature: id(eventAbi || ''),
+          matchesStored: signature === id(eventAbi || '')
         });
       });
 
