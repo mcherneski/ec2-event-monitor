@@ -205,6 +205,21 @@ export class EventListener {
 
     // NFT Contract Events
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
+      // Skip transfers to/from staking contract
+      if (typeof this.stakingContract.target === 'string' &&
+          (from.toLowerCase() === this.stakingContract.target.toLowerCase() ||
+           to.toLowerCase() === this.stakingContract.target.toLowerCase())) {
+        this.logger.info('Skipping Transfer event involving staking contract', {
+          from,
+          to,
+          stakingContract: this.stakingContract.target,
+          tokenId: tokenId.toString(),
+          id: id.toString(),
+          transactionHash: event.transactionHash
+        });
+        return;
+      }
+
       this.logger.info('Transfer event detected', {
         eventName: 'Transfer',
         contractAddress: event.address,
