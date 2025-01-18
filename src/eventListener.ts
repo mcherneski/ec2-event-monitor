@@ -47,25 +47,35 @@ export class EventListener {
     this.logger = new Logger('EventListener');
     
     try {
-      // Log all possible event signatures
-      const eventDefinitions = [
-        'Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
-        'Transfer(address,address,uint256,uint256)',
-        'Burn(address indexed from, uint256 indexed tokenId, uint256 id)',
-        'Burn(address,uint256,uint256)',
-        'Mint(address indexed to, uint256 indexed tokenId, uint256 id)',
-        'Mint(address,uint256,uint256)',
-        'Staked(address indexed staker, uint256 indexed tokenId, uint256 id)',
-        'Staked(address,uint256,uint256)',
-        'Unstaked(address indexed staker, uint256 indexed tokenId, uint256 id)',
-        'Unstaked(address,uint256,uint256)'
-      ];
+      // Log the received signature we're trying to match
+      this.logger.info('Received event signature to match', {
+        signature: '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f'
+      });
 
-      this.logger.info('Computing all possible event signatures', {
-        events: eventDefinitions.map(def => ({
-          definition: def,
-          signature: id(def)
-        }))
+      // Log Transfer event signatures in different formats
+      const transferFormats = {
+        withIndexed: 'Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
+        withoutSpaces: 'Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)',
+        minimal: 'Transfer(address,address,uint256,uint256)',
+        withoutIndexed: 'Transfer(address from, address to, uint256 tokenId, uint256 id)'
+      };
+
+      Object.entries(transferFormats).forEach(([format, signature]) => {
+        this.logger.info('Transfer event signature format', {
+          format,
+          signature,
+          computedHash: id(signature),
+          matchesReceived: id(signature) === '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f'
+        });
+      });
+
+      // Log all event signatures we're using
+      this.logger.info('Configured event signatures', {
+        Transfer: EVENT_SIGNATURES.Transfer,
+        Burn: EVENT_SIGNATURES.Burn,
+        Mint: EVENT_SIGNATURES.Mint,
+        Staked: EVENT_SIGNATURES.Staked,
+        Unstaked: EVENT_SIGNATURES.Unstaked
       });
 
       this.logger.info('Starting event listener with config', {
