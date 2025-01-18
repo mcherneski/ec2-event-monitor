@@ -38,6 +38,26 @@ export class EventListener {
     this.logger = new Logger('EventListener');
     
     try {
+      // Test event signature computation
+      const testSignatures = {
+        Transfer: 'Transfer(address indexed from,address indexed to,uint256 indexed tokenId,uint256 id)',
+        Burn: 'Burn(address indexed from,uint256 indexed tokenId,uint256 id)',
+        Mint: 'Mint(address indexed to,uint256 indexed tokenId,uint256 id)',
+        Staked: 'Staked(address indexed staker,uint256 tokenId,uint256 indexed id)',
+        Unstaked: 'Unstaked(address indexed staker,uint256 tokenId,uint256 indexed id)'
+      };
+
+      // Log each signature computation
+      Object.entries(testSignatures).forEach(([name, sig]) => {
+        this.logger.info('Computing event signature', {
+          name,
+          rawSignature: sig,
+          computedSignature: id(sig),
+          storedSignature: EVENT_SIGNATURES[name as keyof typeof EVENT_SIGNATURES],
+          receivedSignature: '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f'
+        });
+      });
+
       this.logger.info('Starting event listener with config', {
         nftContractAddress: config.nftContractAddress,
         stakingContractAddress: config.stakingContractAddress,
