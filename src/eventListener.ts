@@ -47,16 +47,25 @@ export class EventListener {
     this.logger = new Logger('EventListener');
     
     try {
-      // Log test signature computations
-      Object.entries(TEST_SIGNATURES).forEach(([name, sig]) => {
-        if (name !== 'ReceivedSignature') {
-          this.logger.info('Test signature computation', {
-            name,
-            signature: sig,
-            computed: id(sig),
-            matchesReceived: id(sig) === TEST_SIGNATURES.ReceivedSignature
-          });
-        }
+      // Log all possible event signatures
+      const eventDefinitions = [
+        'Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
+        'Transfer(address,address,uint256,uint256)',
+        'Burn(address indexed from, uint256 indexed tokenId, uint256 id)',
+        'Burn(address,uint256,uint256)',
+        'Mint(address indexed to, uint256 indexed tokenId, uint256 id)',
+        'Mint(address,uint256,uint256)',
+        'Staked(address indexed staker, uint256 indexed tokenId, uint256 id)',
+        'Staked(address,uint256,uint256)',
+        'Unstaked(address indexed staker, uint256 indexed tokenId, uint256 id)',
+        'Unstaked(address,uint256,uint256)'
+      ];
+
+      this.logger.info('Computing all possible event signatures', {
+        events: eventDefinitions.map(def => ({
+          definition: def,
+          signature: id(def)
+        }))
       });
 
       this.logger.info('Starting event listener with config', {
