@@ -299,6 +299,9 @@ export class EventListener {
   }
 
   private async handleEvent(event: OnChainEvent) {
+    // Construct the stream name based on environment (standardizing on 'prod')
+    const streamName = `${this.config.environment === 'prod' ? 'ngu-points-system-events' : 'ngu-points-system-events-dev'}`;
+
     try {
       this.logger.info('ENTERING handleEvent', {
         type: event.type,
@@ -315,14 +318,15 @@ export class EventListener {
 
       // Log Kinesis configuration
       this.logger.info('Kinesis configuration check', {
-        streamName: this.config.kinesisStreamName,
+        streamName,
         region: this.kinesis.config.region(),
         credentials: await this.kinesis.config.credentials(),
-        eventType: event.type
+        eventType: event.type,
+        environment: this.config.environment
       });
 
       const record = {
-        StreamName: this.config.kinesisStreamName,
+        StreamName: streamName,
         PartitionKey: event.tokenId,
         Data: Buffer.from(JSON.stringify(event))
       };
@@ -343,7 +347,7 @@ export class EventListener {
           shardId: result.ShardId,
           timestamp: new Date().toISOString(),
           eventType: event.type,
-          streamName: this.config.kinesisStreamName
+          streamName
         });
       } catch (kinesisError) {
         this.logger.error('Kinesis PutRecord failed', {
@@ -356,12 +360,13 @@ export class EventListener {
             streamName: record.StreamName,
             partitionKey: record.PartitionKey,
             dataSize: record.Data.length
-          }
+          },
+          environment: this.config.environment
         });
         throw kinesisError;
       }
 
-      // Publish metrics
+      // Publish metrics with standardized environment name
       await this.metrics.publishMetric({
         name: 'EventsProcessed',
         value: 1,
@@ -380,8 +385,9 @@ export class EventListener {
           timestamp: new Date().toISOString()
         } : error,
         event: JSON.stringify(event),
-        kinesisStream: this.config.kinesisStreamName,
-        region: this.kinesis.config.region()
+        kinesisStream: streamName,
+        region: this.kinesis.config.region(),
+        environment: this.config.environment
       });
       throw error;
     }
