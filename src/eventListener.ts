@@ -5,6 +5,7 @@ import type { Config } from './types/config.js';
 import type { OnChainEvent } from './types/events.js';
 import { Logger } from './utils/logger.js';
 import { MetricsPublisher } from './utils/metrics.js';
+import { updateMetrics, metrics } from './run.js';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
@@ -32,6 +33,7 @@ export class EventListener {
   private metrics: MetricsPublisher;
   private logger: Logger;
   private config: Config;
+  private reconnectAttempts: number = 0;
 
   constructor(config: Config) {
     this.config = config;
@@ -54,17 +56,19 @@ export class EventListener {
         });
         
         ws.onopen = () => {
-          this.logger.info('WebSocket connection established successfully', {
-            url: config.wsRpcUrl,
-            timestamp: new Date().toISOString()
+          this.logger.info('WebSocket connection established successfully');
+          updateMetrics.updateWebsocket({
+            connected: true,
+            lastReconnectAttempt: Date.now()
           });
         };
         
         ws.onerror = (error: WebSocket.ErrorEvent) => {
-          this.logger.error('WebSocket connection error in constructor', {
-            error,
-            timestamp: new Date().toISOString(),
-            wsUrl: config.wsRpcUrl
+          this.logger.error('WebSocket connection error in constructor', error);
+          updateMetrics.updateWebsocket({
+            connected: false,
+            lastReconnectAttempt: Date.now(),
+            reconnectAttempts: ++this.reconnectAttempts
           });
         };
         
@@ -100,6 +104,11 @@ export class EventListener {
       });
     } catch (error) {
       this.logger.error('Failed to initialize WebSocket provider', { error });
+      updateMetrics.updateWebsocket({
+        connected: false,
+        lastReconnectAttempt: Date.now(),
+        reconnectAttempts: ++this.reconnectAttempts
+      });
       throw error;
     }
   }
@@ -299,95 +308,34 @@ export class EventListener {
   }
 
   private async handleEvent(event: OnChainEvent) {
-    // Construct the stream name based on environment (accepting both 'prod' and 'production')
-    const streamName = `${this.config.environment === 'prod' || this.config.environment === 'production' ? 'ngu-points-system-events' : 'ngu-points-system-events-dev'}`;
-
     try {
-      this.logger.info('ENTERING handleEvent', {
-        type: event.type,
-        tokenId: event.tokenId,
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash,
-        timestamp: new Date().toISOString()
-      });
-
-      // Validate Kinesis client
-      if (!this.kinesis) {
-        throw new Error('Kinesis client is not initialized');
-      }
-
-      // Log Kinesis configuration
-      this.logger.info('Kinesis configuration check', {
-        streamName,
-        region: this.kinesis.config.region(),
-        credentials: await this.kinesis.config.credentials(),
-        eventType: event.type,
-        environment: this.config.environment
-      });
-
-      const record = {
-        StreamName: streamName,
-        PartitionKey: event.tokenId,
+      // Update event metrics based on type
+      updateMetrics.incrementEvent(event.type.toLowerCase() as any);
+      
+      // Send to Kinesis
+      const result = await this.kinesis.send(new PutRecordCommand({
+        StreamName: this.config.kinesisStreamName,
+        PartitionKey: event.transactionHash,
         Data: Buffer.from(JSON.stringify(event))
-      };
+      }));
 
-      this.logger.info('Attempting to send record to Kinesis', {
-        streamName: record.StreamName,
-        partitionKey: record.PartitionKey,
-        dataSize: record.Data.length,
-        data: record.Data.toString(),
-        timestamp: new Date().toISOString()
+      // Update Kinesis metrics
+      updateMetrics.updateKinesis({
+        recordsSent: metrics.kinesis.recordsSent + 1,
+        batchesSent: metrics.kinesis.batchesSent + 1,
+        lastBatchTime: Date.now()
       });
 
-      // Send to Kinesis with detailed error handling
-      try {
-        const result = await this.kinesis.send(new PutRecordCommand(record));
-        this.logger.info('Successfully sent to Kinesis', { 
-          sequenceNumber: result.SequenceNumber,
-          shardId: result.ShardId,
-          timestamp: new Date().toISOString(),
-          eventType: event.type,
-          streamName
-        });
-      } catch (kinesisError) {
-        this.logger.error('Kinesis PutRecord failed', {
-          error: kinesisError instanceof Error ? {
-            message: kinesisError.message,
-            name: kinesisError.name,
-            stack: kinesisError.stack
-          } : kinesisError,
-          record: {
-            streamName: record.StreamName,
-            partitionKey: record.PartitionKey,
-            dataSize: record.Data.length
-          },
-          environment: this.config.environment
-        });
-        throw kinesisError;
-      }
-
-      // Publish metrics with standardized environment name
-      await this.metrics.publishMetric({
-        name: 'EventsProcessed',
-        value: 1,
-        unit: 'Count',
-        dimensions: {
-          EventType: event.type,
-          Environment: this.config.environment
-        }
+      this.logger.info('Event sent to Kinesis', {
+        type: event.type,
+        transactionHash: event.transactionHash,
+        shardId: result.ShardId
       });
     } catch (error) {
-      this.logger.error('Failed to process event', { 
-        error: error instanceof Error ? {
-          message: error.message,
-          name: error.name,
-          stack: error.stack,
-          timestamp: new Date().toISOString()
-        } : error,
-        event: JSON.stringify(event),
-        kinesisStream: streamName,
-        region: this.kinesis.config.region(),
-        environment: this.config.environment
+      this.logger.error('Failed to send event to Kinesis', { error, event });
+      updateMetrics.incrementEvent('errors');
+      updateMetrics.updateKinesis({
+        errors: metrics.kinesis.errors + 1
       });
       throw error;
     }
@@ -396,30 +344,33 @@ export class EventListener {
   private async monitorConnection() {
     const ws = this.provider.websocket as WebSocket;
     
-    ws.onerror = async (error: WebSocket.ErrorEvent) => {
-      this.logger.error('WebSocket connection error', {
-        error,
-        timestamp: new Date().toISOString(),
-        wsUrl: this.config.wsRpcUrl
+    ws.on('close', async () => {
+      this.logger.info('WebSocket connection closed');
+      updateMetrics.updateWebsocket({
+        connected: false,
+        lastReconnectAttempt: Date.now()
       });
       await this.reconnect();
-    };
+    });
 
-    ws.onclose = async () => {
-      this.logger.error('WebSocket disconnected', {
-        timestamp: new Date().toISOString(),
-        wsUrl: this.config.wsRpcUrl
+    ws.on('error', (error: WebSocket.ErrorEvent) => {
+      this.logger.error('WebSocket connection error', error);
+      updateMetrics.updateWebsocket({
+        connected: false,
+        lastReconnectAttempt: Date.now(),
+        reconnectAttempts: ++this.reconnectAttempts
       });
-      await this.reconnect();
-    };
-
-    this.logger.info('Connection monitoring started', {
-      wsUrl: this.config.wsRpcUrl,
-      timestamp: new Date().toISOString()
     });
   }
 
   private async reconnect() {
+    this.logger.info('Attempting to reconnect...');
+    updateMetrics.updateWebsocket({
+      connected: false,
+      lastReconnectAttempt: Date.now(),
+      reconnectAttempts: ++this.reconnectAttempts
+    });
+    
     try {
       this.logger.info('Attempting to reconnect');
       await this.provider.destroy();
@@ -449,5 +400,8 @@ export class EventListener {
   async stop() {
     this.logger.info('Stopping event listener');
     await this.provider.destroy();
+    updateMetrics.updateWebsocket({
+      connected: false
+    });
   }
 } 

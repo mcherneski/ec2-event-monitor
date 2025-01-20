@@ -10,6 +10,58 @@ dotenv.config();
 
 const logger = new Logger('Server');
 
+// Metrics object to track system performance
+export const metrics = {
+  events: {
+    total: 0,
+    transfer: 0,
+    stake: 0,
+    unstake: 0,
+    errors: 0,
+    lastEventTime: Date.now()
+  },
+  websocket: {
+    connected: false,
+    lastReconnectAttempt: Date.now(),
+    reconnectAttempts: 0,
+    messagesProcessed: 0
+  },
+  kinesis: {
+    batchesSent: 0,
+    recordsSent: 0,
+    errors: 0,
+    lastBatchTime: Date.now()
+  },
+  system: {
+    startTime: Date.now(),
+    heapTotal: 0,
+    heapUsed: 0,
+    rss: 0
+  }
+};
+
+export const updateMetrics = {
+  incrementEvent: (type: 'transfer' | 'stake' | 'unstake' | 'errors') => {
+    metrics.events[type]++;
+    metrics.events.total++;
+    metrics.events.lastEventTime = Date.now();
+  },
+  updateWebsocket: (update: Partial<typeof metrics.websocket>) => {
+    Object.assign(metrics.websocket, update);
+  },
+  updateKinesis: (update: Partial<typeof metrics.kinesis>) => {
+    Object.assign(metrics.kinesis, update);
+  }
+};
+
+// Update system metrics every 5 seconds
+setInterval(() => {
+  const memoryUsage = process.memoryUsage();
+  metrics.system.heapTotal = memoryUsage.heapTotal;
+  metrics.system.heapUsed = memoryUsage.heapUsed;
+  metrics.system.rss = memoryUsage.rss;
+}, 5000);
+
 // Start the server and event listener
 const start = async () => {
   try {
@@ -29,13 +81,38 @@ const start = async () => {
 
     // Readiness check endpoint
     app.get('/ready', (_req: Request, res: Response) => {
-      res.json({ status: 'ready' });
+      const isReady = metrics.websocket.connected && 
+        (Date.now() - metrics.kinesis.lastBatchTime < 60000); // Last batch within 1 minute
+      res.json({ 
+        status: isReady ? 'ready' : 'not_ready',
+        websocketConnected: metrics.websocket.connected,
+        lastBatchAge: Date.now() - metrics.kinesis.lastBatchTime
+      });
     });
 
     // Metrics endpoint
     app.get('/metrics', (_req: Request, res: Response) => {
-      // TODO: Implement custom metrics endpoint if needed
-      res.json({});
+      res.json({
+        events: {
+          ...metrics.events,
+          eventsPerMinute: metrics.events.total / (metrics.system.heapTotal / 1024 / 1024 / 60)
+        },
+        websocket: {
+          ...metrics.websocket,
+          lastReconnectAgo: Date.now() - metrics.websocket.lastReconnectAttempt
+        },
+        kinesis: {
+          ...metrics.kinesis,
+          averageBatchSize: metrics.kinesis.batchesSent > 0 ? 
+            metrics.kinesis.recordsSent / metrics.kinesis.batchesSent : 0,
+          lastBatchAgo: Date.now() - metrics.kinesis.lastBatchTime
+        },
+        system: {
+          ...metrics.system,
+          memoryUsageMB: metrics.system.rss / 1024 / 1024,
+          uptimeHours: metrics.system.heapTotal / 3600
+        }
+      });
     });
 
     // Start the event listener
