@@ -54,13 +54,13 @@ export const updateMetrics = {
   }
 };
 
-// Update system metrics every 5 seconds
+// Update system metrics every 10 seconds
 setInterval(() => {
   const memoryUsage = process.memoryUsage();
   metrics.system.heapTotal = memoryUsage.heapTotal;
   metrics.system.heapUsed = memoryUsage.heapUsed;
   metrics.system.rss = memoryUsage.rss;
-}, 5000);
+}, 10000);
 
 // Start the server and event listener
 const start = async () => {
