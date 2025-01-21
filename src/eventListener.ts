@@ -24,7 +24,7 @@ const KNOWN_SIGNATURES = {
   Staked: '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
   Unstaked: '0x7fc4727e062e336010f2c282598ef5f14facb3de68cf8195c2f23e1454b2b74e'
 };
-
+console.log('EventListener.ts loaded');
 export class EventListener {
   private provider: WebSocketProvider;
   private nftContract: Contract;
