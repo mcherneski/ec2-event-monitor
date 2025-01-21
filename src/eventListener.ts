@@ -171,6 +171,19 @@ export class EventListener {
         retentionPeriod: describeResult.StreamDescription?.RetentionPeriodHours
       });
       
+      // Try sending a test record
+      this.logger.info('Attempting to send test record to Kinesis');
+      const testResult = await this.kinesis.send(new PutRecordCommand({
+        StreamName: this.config.kinesisStreamName,
+        PartitionKey: 'test',
+        Data: Buffer.from(JSON.stringify({ type: 'test', timestamp: Date.now() }))
+      }));
+      
+      this.logger.info('Successfully sent test record to Kinesis', {
+        shardId: testResult.ShardId,
+        sequenceNumber: testResult.SequenceNumber
+      });
+      
       const credentials = await this.kinesis.config.credentials();
       this.logger.info('Kinesis credentials loaded', {
         hasCredentials: !!credentials,
@@ -420,11 +433,34 @@ export class EventListener {
       });
 
       // Send to Kinesis
+      this.logger.info('Sending event to Kinesis', {
+        streamName: this.config.kinesisStreamName,
+        eventType: event.type,
+        transactionHash: event.transactionHash
+      });
+
       const result = await this.kinesis.send(new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
         PartitionKey: event.transactionHash,
         Data: Buffer.from(JSON.stringify(event))
-      }));
+      })).catch(error => {
+        this.logger.error('Kinesis send command failed', {
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            code: (error as any).code,
+            requestId: (error as any).$metadata?.requestId,
+            cfId: (error as any).$metadata?.cfId,
+            httpStatusCode: (error as any).$metadata?.httpStatusCode
+          } : error,
+          eventDetails: {
+            type: event.type,
+            transactionHash: event.transactionHash
+          }
+        });
+        throw error;
+      });
 
       // Update Kinesis metrics
       updateMetrics.updateKinesis({
@@ -437,8 +473,7 @@ export class EventListener {
         type: event.type,
         transactionHash: event.transactionHash,
         shardId: result.ShardId,
-        sequenceNumber: result.SequenceNumber,
-        kinesisResponse: result
+        sequenceNumber: result.SequenceNumber
       });
     } catch (error) {
       this.logger.error('Failed to send event to Kinesis', { 
