@@ -5,7 +5,11 @@ set -e  # Exit on error
 echo "System information:"
 cat /etc/os-release
 echo "Available package managers:"
-which apt apt-get 2>/dev/null || echo "No apt/apt-get found"
+if command -v dnf &> /dev/null; then
+    echo "Found dnf"
+else
+    echo "No dnf found"
+fi
 echo "PATH=$PATH"
 
 # Remove any existing Node.js installations that might conflict
@@ -15,8 +19,8 @@ sudo apt-get autoremove -y || true
 
 # Install Node.js 18.x
 echo "Installing Node.js 18.x..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
+# Install Node.js 18.x using dnf
+sudo dnf install -y nodejs
 
 # Create symlinks if needed
 if [ ! -f "/usr/bin/node" ]; then
@@ -56,4 +60,11 @@ rm -rf /home/ec2-user/event-monitor/*
 # Debug: Show installed binaries
 echo "Node.js binary locations:"
 ls -l /usr/bin/node* || true
-ls -l /usr/local/bin/node* || true 
+ls -l /usr/local/bin/node* || true
+
+# Install pnpm
+echo "Installing pnpm..."
+npm install -g pnpm
+
+# Verify pnpm installation
+pnpm --version 

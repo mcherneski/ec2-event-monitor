@@ -6,8 +6,7 @@ current_version=$(node --version)
 if [[ ! $current_version == *"$required_version"* ]]; then
     echo "Error: Node.js version 18.x is required. Current version: $current_version"
     echo "Installing Node.js 18..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt install -y nodejs
+    sudo dnf install -y nodejs
     current_version=$(node --version)
     echo "Installed Node.js version: $current_version"
 fi

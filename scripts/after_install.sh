@@ -6,7 +6,8 @@ cd /home/ec2-user/event-monitor
 # Install pnpm if not already installed
 echo "Setting up pnpm..."
 if ! command -v pnpm &> /dev/null; then
-    curl -fsSL https://get.pnpm.io/install.sh | sh -
+    echo "Installing pnpm using npm..."
+    npm install -g pnpm
     # Add pnpm to PATH
     export PNPM_HOME="/root/.local/share/pnpm"
     export PATH="$PNPM_HOME:$PATH"
