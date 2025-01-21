@@ -99,7 +99,23 @@ export class EventListener {
       
       this.nftContract = new Contract(config.nftContractAddress, EVENT_ABIS, this.provider);
       this.stakingContract = new Contract(config.stakingContractAddress, EVENT_ABIS, this.provider);
-      this.kinesis = new KinesisClient({ region: config.awsRegion });
+      
+      // Initialize Kinesis client with detailed logging
+      this.logger.info('Initializing Kinesis client', {
+        region: config.awsRegion,
+        streamName: config.kinesisStreamName
+      });
+      
+      this.kinesis = new KinesisClient({ 
+        region: config.awsRegion,
+        maxAttempts: 3
+      });
+      
+      // Log Kinesis configuration without credentials for now
+      this.logger.info('Kinesis client initialized', {
+        clientConfig: this.kinesis.config
+      });
+      
       this.metrics = new MetricsPublisher(config.awsRegion, 'NGU/BlockchainEvents');
       
       // Validate computed signatures against known signatures
@@ -132,6 +148,19 @@ export class EventListener {
 
   async start() {
     this.logger.info('Starting event listener');
+    
+    // Log Kinesis credentials
+    try {
+      const credentials = await this.kinesis.config.credentials();
+      this.logger.info('Kinesis credentials loaded', {
+        hasCredentials: !!credentials,
+        accessKeyId: credentials?.accessKeyId ? '[REDACTED]' : undefined,
+        expiration: credentials?.expiration
+      });
+    } catch (error) {
+      this.logger.error('Failed to load Kinesis credentials', error);
+    }
+    
     await this.setupEventListeners();
     await this.monitorConnection();
   }

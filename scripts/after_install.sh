@@ -52,7 +52,7 @@ chmod 644 .env
 
 echo "Fetching environment variables from SSM..."
 # First set NODE_ENV to production
-echo "NODE_ENV=production" > .env
+echo "NODE_ENV=prod" > .env
 
 # Then fetch all other environment variables from SSM Parameter Store
 aws ssm get-parameters-by-path \
@@ -95,7 +95,7 @@ Type=simple
 User=ec2-user
 Group=ec2-user
 WorkingDirectory=/home/ec2-user/event-monitor
-Environment=NODE_ENV=production
+Environment=NODE_ENV=prod
 Environment=DEBUG=*
 Environment=NODE_DEBUG=*
 Environment=NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node"
@@ -119,7 +119,7 @@ EOF
 
 # Create log files with proper permissions
 echo "Setting up log files..."
-touch /var/log/event-listener.log /var/log/event-listener.error.log
+sudo touch /var/log/event-listener.log /var/log/event-listener.error.log
 sudo chown ec2-user:ec2-user /var/log/event-listener.log /var/log/event-listener.error.log
 sudo chmod 644 /var/log/event-listener.log /var/log/event-listener.error.log
 
