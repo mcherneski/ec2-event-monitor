@@ -1,6 +1,6 @@
 import { WebSocketProvider, Contract, EventLog, id, Fragment, EventFragment } from 'ethers';
 import WebSocket from 'ws';
-import { KinesisClient, PutRecordCommand } from '@aws-sdk/client-kinesis';
+import { KinesisClient, PutRecordCommand, DescribeStreamCommand } from '@aws-sdk/client-kinesis';
 import type { Config } from './types/config.js';
 import type { OnChainEvent } from './types/events.js';
 import { Logger } from './utils/logger.js';
@@ -154,8 +154,23 @@ export class EventListener {
   async start() {
     this.logger.info('Starting event listener');
     
-    // Log Kinesis credentials
+    // Test Kinesis credentials and stream access
     try {
+      this.logger.info('Testing Kinesis stream access', {
+        streamName: this.config.kinesisStreamName
+      });
+      
+      const describeResult = await this.kinesis.send(new DescribeStreamCommand({
+        StreamName: this.config.kinesisStreamName
+      }));
+      
+      this.logger.info('Successfully verified Kinesis stream access', {
+        streamName: this.config.kinesisStreamName,
+        streamStatus: describeResult.StreamDescription?.StreamStatus,
+        shardCount: describeResult.StreamDescription?.Shards?.length,
+        retentionPeriod: describeResult.StreamDescription?.RetentionPeriodHours
+      });
+      
       const credentials = await this.kinesis.config.credentials();
       this.logger.info('Kinesis credentials loaded', {
         hasCredentials: !!credentials,
@@ -163,7 +178,23 @@ export class EventListener {
         expiration: credentials?.expiration
       });
     } catch (error) {
-      this.logger.error('Failed to load Kinesis credentials', error);
+      this.logger.error('Failed to verify Kinesis stream access', {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          code: (error as any).code,
+          requestId: (error as any).$metadata?.requestId,
+          cfId: (error as any).$metadata?.cfId,
+          httpStatusCode: (error as any).$metadata?.httpStatusCode
+        } : error,
+        streamName: this.config.kinesisStreamName,
+        kinesisConfig: {
+          region: this.kinesis.config.region,
+          endpoint: this.kinesis.config.endpoint
+        }
+      });
+      // Don't throw here - we want the service to start even if Kinesis test fails
+      // This allows for recovery if it's a temporary issue
     }
     
     await this.setupEventListeners();
