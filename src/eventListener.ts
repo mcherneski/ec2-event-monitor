@@ -152,66 +152,32 @@ export class EventListener {
   }
 
   async start() {
-    this.logger.info('Starting event listener');
-    
-    // Test Kinesis credentials and stream access
     try {
-      this.logger.info('Testing Kinesis stream access', {
-        streamName: this.config.kinesisStreamName
+      // Verify Kinesis stream access
+      const describeCommand = new DescribeStreamCommand({
+        StreamName: this.config.kinesisStreamName
       });
       
-      const describeResult = await this.kinesis.send(new DescribeStreamCommand({
-        StreamName: this.config.kinesisStreamName
-      }));
-      
+      const streamDescription = await this.kinesis.send(describeCommand);
       this.logger.info('Successfully verified Kinesis stream access', {
         streamName: this.config.kinesisStreamName,
-        streamStatus: describeResult.StreamDescription?.StreamStatus,
-        shardCount: describeResult.StreamDescription?.Shards?.length,
-        retentionPeriod: describeResult.StreamDescription?.RetentionPeriodHours
+        streamStatus: streamDescription.StreamDescription?.StreamStatus,
+        shardCount: streamDescription.StreamDescription?.Shards?.length
       });
+
+      // Set up event listeners
+      await this.setupEventListeners();
       
-      // Try sending a test record
-      this.logger.info('Attempting to send test record to Kinesis');
-      const testResult = await this.kinesis.send(new PutRecordCommand({
-        StreamName: this.config.kinesisStreamName,
-        PartitionKey: 'test',
-        Data: Buffer.from(JSON.stringify({ type: 'test', timestamp: Date.now() }))
-      }));
-      
-      this.logger.info('Successfully sent test record to Kinesis', {
-        shardId: testResult.ShardId,
-        sequenceNumber: testResult.SequenceNumber
-      });
-      
-      const credentials = await this.kinesis.config.credentials();
-      this.logger.info('Kinesis credentials loaded', {
-        hasCredentials: !!credentials,
-        accessKeyId: credentials?.accessKeyId ? '[REDACTED]' : undefined,
-        expiration: credentials?.expiration
-      });
+      this.logger.info('Event listener started successfully');
     } catch (error) {
-      this.logger.error('Failed to verify Kinesis stream access', {
+      this.logger.error('Failed to start event listener', {
         error: error instanceof Error ? {
-          name: error.name,
           message: error.message,
-          code: (error as any).code,
-          requestId: (error as any).$metadata?.requestId,
-          cfId: (error as any).$metadata?.cfId,
-          httpStatusCode: (error as any).$metadata?.httpStatusCode
-        } : error,
-        streamName: this.config.kinesisStreamName,
-        kinesisConfig: {
-          region: this.kinesis.config.region,
-          endpoint: this.kinesis.config.endpoint
-        }
+          stack: error.stack
+        } : error
       });
-      // Don't throw here - we want the service to start even if Kinesis test fails
-      // This allows for recovery if it's a temporary issue
+      throw error;
     }
-    
-    await this.setupEventListeners();
-    await this.monitorConnection();
   }
 
   private async setupEventListeners() {
