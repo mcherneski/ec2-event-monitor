@@ -12,26 +12,11 @@ else
 fi
 echo "PATH=$PATH"
 
-# Remove any existing Node.js installations that might conflict
-echo "Removing any conflicting Node.js packages..."
-sudo apt-get remove -y nodejs nodejs-doc libnode-dev || true
-sudo apt-get autoremove -y || true
-
 # Install Node.js 18.x
 echo "Installing Node.js 18.x..."
-# Install Node.js 18.x using dnf
+sudo dnf module reset nodejs -y
+sudo dnf module enable nodejs:18 -y
 sudo dnf install -y nodejs
-
-# Create symlinks if needed
-if [ ! -f "/usr/bin/node" ]; then
-    echo "Creating symlink for node..."
-    sudo ln -s $(which node) /usr/bin/node
-fi
-
-if [ ! -f "/usr/bin/npm" ]; then
-    echo "Creating symlink for npm..."
-    sudo ln -s $(which npm) /usr/bin/npm
-fi
 
 # Verify Node.js installation
 echo "Node.js version:"
@@ -56,11 +41,6 @@ fi
 
 # Clean up existing files if any
 rm -rf /home/ec2-user/event-monitor/*
-
-# Debug: Show installed binaries
-echo "Node.js binary locations:"
-ls -l /usr/bin/node* || true
-ls -l /usr/local/bin/node* || true
 
 # Install pnpm
 echo "Installing pnpm..."
