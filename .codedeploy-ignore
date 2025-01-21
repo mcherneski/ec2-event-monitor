@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment files
+.env
+.env.local
+.env.*
+
+# Development files
+.git/
+.gitignore
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+
+# Build artifacts (let the pipeline handle these)
+dist/*
+
+# Documentation and other files not needed in production
+*.md
+instructions.md
+readme.md
+config/
+
+# Temporary files
+*.swp
+*.swo
+.DS_Store
+Thumbs.db 
