@@ -453,7 +453,8 @@ export class EventListener {
       const data = Buffer.from(JSON.stringify(event));
       const command = new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
-        PartitionKey: event.transactionHash || 'default',
+        // Use event type as partition key to ensure consistent distribution
+        PartitionKey: event.type,
         Data: data
       });
 
