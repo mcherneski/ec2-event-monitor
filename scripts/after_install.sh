@@ -74,7 +74,7 @@ echo "Creating systemd service file..."
 NODE_PATH=$(which node)
 echo "Using Node.js from: $NODE_PATH"
 
-cat > /etc/systemd/system/event-listener.service << EOF
+sudo tee /etc/systemd/system/event-listener.service << EOF
 [Unit]
 Description=Blockchain Event Listener
 After=network.target
