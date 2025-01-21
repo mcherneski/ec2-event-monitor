@@ -6,6 +6,7 @@ import type { OnChainEvent } from './types/events.js';
 import { Logger } from './utils/logger.js';
 import { MetricsPublisher } from './utils/metrics.js';
 import { updateMetrics, metrics } from './run.js';
+import * as ethers from 'ethers';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
@@ -47,7 +48,22 @@ export class EventListener {
         kinesisStreamName: config.kinesisStreamName
       });
 
-      this.logger.info('Attempting to connect to WebSocket provider', { url: config.wsRpcUrl });
+      // Validate contract addresses
+      if (!ethers.isAddress(config.nftContractAddress)) {
+        throw new Error(`Invalid NFT contract address: ${config.nftContractAddress}`);
+      }
+      if (!ethers.isAddress(config.stakingContractAddress)) {
+        throw new Error(`Invalid staking contract address: ${config.stakingContractAddress}`);
+      }
+
+      this.logger.info('Contract addresses validated successfully');
+      this.logger.info('Attempting to connect to WebSocket provider', { 
+        url: config.wsRpcUrl,
+        expectedNFTAddress: '0xeb2Ad665644448C09a3117f900B0A2Df17866bBC',
+        expectedStakingAddress: '0xaD7327B4Ba682123D5eCFcE67214c9DDaE352c43',
+        providedNFTAddress: config.nftContractAddress,
+        providedStakingAddress: config.stakingContractAddress
+      });
       
       const wsCreator = () => {
         const ws = new WebSocket(config.wsRpcUrl, {
@@ -312,7 +328,11 @@ export class EventListener {
       this.logger.info('Starting handleEvent processing', {
         eventType: event.type,
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        contractAddresses: {
+          nft: this.nftContract.target,
+          staking: this.stakingContract.target
+        }
       });
 
       // Update event metrics based on type
@@ -322,11 +342,15 @@ export class EventListener {
         metricsUpdated: true
       });
       
-      // Log the event payload before sending to Kinesis
+      // Log the event payload and Kinesis configuration before sending
       this.logger.info('Preparing to send event to Kinesis', {
         streamName: this.config.kinesisStreamName,
         eventPayload: event,
-        payloadSize: Buffer.from(JSON.stringify(event)).length
+        payloadSize: Buffer.from(JSON.stringify(event)).length,
+        kinesisConfig: {
+          region: this.kinesis.config.region,
+          endpoint: this.kinesis.config.endpoint
+        }
       });
 
       // Send to Kinesis
