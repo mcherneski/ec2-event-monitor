@@ -61,17 +61,6 @@ fi
 systemctl enable event-listener
 systemctl start event-listener
 
-# Wait for service to start
-sleep 5
-
-# Print service status and logs
-echo "Service status:"
-systemctl status event-listener
-echo "Service logs:"
-journalctl -u event-listener --no-pager -n 50
-echo "Error logs:"
-cat /var/log/event-listener.error.log
-
 # Check if service is running
 if ! systemctl is-active --quiet event-listener; then
     echo "Failed to start event-listener service"
