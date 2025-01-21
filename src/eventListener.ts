@@ -421,6 +421,14 @@ export class EventListener {
         metricsUpdated: true
       });
       
+      // Verify Kinesis credentials before sending
+      const credentials = await this.kinesis.config.credentials();
+      this.logger.info('Verifying Kinesis credentials before send', {
+        hasCredentials: !!credentials,
+        accessKeyId: credentials?.accessKeyId ? '[REDACTED]' : undefined,
+        expiration: credentials?.expiration
+      });
+      
       // Log the event payload and Kinesis configuration before sending
       this.logger.info('Preparing to send event to Kinesis', {
         streamName: this.config.kinesisStreamName,
@@ -428,22 +436,41 @@ export class EventListener {
         payloadSize: Buffer.from(JSON.stringify(event)).length,
         kinesisConfig: {
           region: this.kinesis.config.region,
-          endpoint: this.kinesis.config.endpoint
+          endpoint: this.kinesis.config.endpoint,
+          maxAttempts: this.kinesis.config.maxAttempts,
+          retryMode: this.kinesis.config.retryMode,
+          hasValidCredentials: !!credentials
         }
       });
 
       // Send to Kinesis
-      this.logger.info('Sending event to Kinesis', {
+      this.logger.info('Creating PutRecordCommand', {
         streamName: this.config.kinesisStreamName,
         eventType: event.type,
         transactionHash: event.transactionHash
       });
 
-      const result = await this.kinesis.send(new PutRecordCommand({
+      const data = Buffer.from(JSON.stringify(event));
+      const command = new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
-        PartitionKey: event.transactionHash,
-        Data: Buffer.from(JSON.stringify(event))
-      })).catch(error => {
+        PartitionKey: event.transactionHash || 'default',
+        Data: data
+      });
+
+      this.logger.info('Sending event to Kinesis', {
+        streamName: this.config.kinesisStreamName,
+        eventType: event.type,
+        transactionHash: event.transactionHash,
+        command: {
+          input: {
+            StreamName: command.input.StreamName,
+            PartitionKey: command.input.PartitionKey,
+            DataSize: data.length
+          }
+        }
+      });
+
+      const result = await this.kinesis.send(command).catch(error => {
         this.logger.error('Kinesis send command failed', {
           error: error instanceof Error ? {
             name: error.name,
@@ -457,6 +484,13 @@ export class EventListener {
           eventDetails: {
             type: event.type,
             transactionHash: event.transactionHash
+          },
+          command: {
+            input: {
+              StreamName: command.input.StreamName,
+              PartitionKey: command.input.PartitionKey,
+              DataSize: data.length
+            }
           }
         });
         throw error;
@@ -473,7 +507,8 @@ export class EventListener {
         type: event.type,
         transactionHash: event.transactionHash,
         shardId: result.ShardId,
-        sequenceNumber: result.SequenceNumber
+        sequenceNumber: result.SequenceNumber,
+        timestamp: Date.now()
       });
     } catch (error) {
       this.logger.error('Failed to send event to Kinesis', { 
@@ -494,7 +529,9 @@ export class EventListener {
         kinesisStream: this.config.kinesisStreamName,
         kinesisConfig: {
           region: this.kinesis.config.region,
-          endpoint: this.kinesis.config.endpoint
+          endpoint: this.kinesis.config.endpoint,
+          maxAttempts: this.kinesis.config.maxAttempts,
+          retryMode: this.kinesis.config.retryMode
         }
       });
       updateMetrics.incrementEvent('errors');
