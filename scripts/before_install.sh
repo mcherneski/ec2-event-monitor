@@ -1,4 +1,5 @@
 #!/bin/bash
+#Version 0.0.01 
 set -e  # Exit on error
 
 # Debug system information
