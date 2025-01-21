@@ -11,7 +11,7 @@ if grep -q "Amazon Linux 2023" /etc/os-release; then
     echo "Amazon Linux 2023 detected, using dnf"
     # Install Node.js 18.x for AL2023
     sudo dnf update -y
-    sudo dnf install -y nodejs-18
+    sudo dnf install -y nodejs nodejs-devel npm gcc-c++ make
 elif grep -q "Amazon Linux 2" /etc/os-release; then
     echo "Amazon Linux 2 detected, using yum"
     # Install Node.js 18.x for AL2
