@@ -44,6 +44,8 @@ sudo chown -R ec2-user:ec2-user .
 
 # Set up environment file
 echo "Setting up environment file..."
+# Remove old .env file if it exists
+rm -f .env
 touch .env
 sudo chown ec2-user:ec2-user .env
 chmod 644 .env
