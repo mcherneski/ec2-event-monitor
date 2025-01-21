@@ -3,39 +3,49 @@ set -e  # Exit on error
 
 cd /home/ec2-user/event-monitor
 
-# Install pnpm if not already installed
-echo "Setting up pnpm..."
-if ! command -v pnpm &> /dev/null; then
-    echo "Installing pnpm using npm..."
-    npm install -g pnpm
-    # Add pnpm to PATH
-    export PNPM_HOME="/root/.local/share/pnpm"
-    export PATH="$PNPM_HOME:$PATH"
-    # Also add to ec2-user's environment
-    echo 'export PNPM_HOME="/home/ec2-user/.local/share/pnpm"' >> /home/ec2-user/.bashrc
-    echo 'export PATH="$PNPM_HOME:$PATH"' >> /home/ec2-user/.bashrc
+# Ensure we're running as ec2-user for the rest of the script
+if [ "$(whoami)" != "ec2-user" ]; then
+    exec sudo -u ec2-user /bin/bash "$0" "$@"
 fi
 
-# Source pnpm environment
-source ~/.bashrc
+# Source ec2-user's environment
+source /home/ec2-user/.bashrc
+
+# Verify pnpm is in path
+echo "Verifying pnpm installation..."
+export PATH="/home/ec2-user/.local/share/pnpm:$PATH"
+if ! command -v pnpm &> /dev/null; then
+    echo "pnpm not found in PATH. Installing..."
+    npm install -g pnpm
+    export PNPM_HOME="/home/ec2-user/.local/share/pnpm"
+    export PATH="$PNPM_HOME:$PATH"
+fi
 
 # Install production dependencies
 echo "Installing dependencies..."
 rm -rf node_modules
 rm -f pnpm-lock.yaml  # Remove existing lock file
+
+# Ensure proper permissions
+sudo chown -R ec2-user:ec2-user .
+
+# Install dependencies as ec2-user
+echo "Running pnpm install..."
 pnpm install --prod --no-frozen-lockfile
+
 echo "Installed packages:"
 ls -la node_modules/.pnpm/
 echo "Checking for ws package:"
 ls -la node_modules/ws || echo "ws package not found!"
 
-# Ensure dist directory exists and has correct permissions
+# Ensure dist directory exists with correct permissions
 mkdir -p dist
-chown -R ec2-user:ec2-user .
+sudo chown -R ec2-user:ec2-user .
 
-# Create empty .env file first
+# Set up environment file
+echo "Setting up environment file..."
 touch .env
-chown ec2-user:ec2-user .env
+sudo chown ec2-user:ec2-user .env
 chmod 644 .env
 
 echo "Fetching environment variables from SSM..."
@@ -48,20 +58,15 @@ aws ssm get-parameters-by-path \
     --output text | while read -r name value; do
     # Extract parameter name after the last '/'
     param_name=$(echo "$name" | rev | cut -d'/' -f1 | rev)
-    echo "${param_name}=${value}" >> .env
+    echo "$param_name=$value" >> .env
 done
 
-# Debug: Check if .env was created and has content
-echo "Checking .env file..."
-if [ -f .env ]; then
-    echo ".env file exists"
-    ls -l .env
-    echo "Number of lines in .env:"
-    wc -l .env
-else
-    echo "Error: .env file was not created!"
-    exit 1
+# Verify .env file was created
+if [ ! -s .env ]; then
+    echo "Warning: .env file is empty or was not created"
 fi
+
+echo "After install completed successfully"
 
 # Create systemd service file
 echo "Creating systemd service file..."
@@ -104,8 +109,8 @@ EOF
 # Create log files with proper permissions
 echo "Setting up log files..."
 touch /var/log/event-listener.log /var/log/event-listener.error.log
-chown ec2-user:ec2-user /var/log/event-listener.log /var/log/event-listener.error.log
-chmod 644 /var/log/event-listener.log /var/log/event-listener.error.log
+sudo chown ec2-user:ec2-user /var/log/event-listener.log /var/log/event-listener.error.log
+sudo chmod 644 /var/log/event-listener.log /var/log/event-listener.error.log
 
 # Test Node.js application
 echo "Testing Node.js application..."
@@ -120,4 +125,4 @@ kill $PID || true
 
 # Reload systemd daemon
 echo "Reloading systemd daemon..."
-systemctl daemon-reload 
+sudo systemctl daemon-reload 

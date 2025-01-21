@@ -4,19 +4,23 @@ set -e  # Exit on error
 # Debug system information
 echo "System information:"
 cat /etc/os-release
-echo "Available package managers:"
-if command -v dnf &> /dev/null; then
-    echo "Found dnf"
-else
-    echo "No dnf found"
-fi
-echo "PATH=$PATH"
+echo "Detecting package manager..."
 
-# Install Node.js 18.x
-echo "Installing Node.js 18.x..."
-sudo dnf module reset nodejs -y
-sudo dnf module enable nodejs:18 -y
-sudo dnf install -y nodejs
+# Detect Amazon Linux version and package manager
+if grep -q "Amazon Linux 2023" /etc/os-release; then
+    echo "Amazon Linux 2023 detected, using dnf"
+    # Install Node.js 18.x for AL2023
+    sudo dnf update -y
+    sudo dnf install -y nodejs-18
+elif grep -q "Amazon Linux 2" /etc/os-release; then
+    echo "Amazon Linux 2 detected, using yum"
+    # Install Node.js 18.x for AL2
+    curl -sL https://rpm.nodesource.com/setup_18.x | sudo bash -
+    sudo yum install -y nodejs
+else
+    echo "Unsupported OS version"
+    exit 1
+fi
 
 # Verify Node.js installation
 echo "Node.js version:"
@@ -26,7 +30,7 @@ echo "npm version:"
 npm --version
 which npm
 
-# Create ec2-user if it doesn't exist
+# Create ec2-user if it doesn't exist (should already exist on Amazon Linux)
 if ! id "ec2-user" &>/dev/null; then
     useradd -m -s /bin/bash ec2-user
     # Add ec2-user to sudoers
@@ -34,17 +38,21 @@ if ! id "ec2-user" &>/dev/null; then
 fi
 
 # Create application directory if it doesn't exist
-if [ ! -d "/home/ec2-user/event-monitor" ]; then
-    mkdir -p /home/ec2-user/event-monitor
-    chown ec2-user:ec2-user /home/ec2-user/event-monitor
-fi
+sudo mkdir -p /home/ec2-user/event-monitor
+sudo chown ec2-user:ec2-user /home/ec2-user/event-monitor
 
 # Clean up existing files if any
-rm -rf /home/ec2-user/event-monitor/*
+sudo rm -rf /home/ec2-user/event-monitor/*
 
-# Install pnpm
+# Install pnpm globally
 echo "Installing pnpm..."
-npm install -g pnpm
+sudo npm install -g pnpm
+
+# Set up pnpm for ec2-user
+sudo -u ec2-user bash -c 'mkdir -p ~/.local/share/pnpm'
+echo 'export PNPM_HOME="/home/ec2-user/.local/share/pnpm"' | sudo tee -a /home/ec2-user/.bashrc
+echo 'export PATH="$PNPM_HOME:$PATH"' | sudo tee -a /home/ec2-user/.bashrc
 
 # Verify pnpm installation
+echo "pnpm version:"
 pnpm --version 
