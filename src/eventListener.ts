@@ -108,12 +108,17 @@ export class EventListener {
       
       this.kinesis = new KinesisClient({ 
         region: config.awsRegion,
-        maxAttempts: 3
+        maxAttempts: 3,
+        retryMode: 'standard'
       });
       
       // Log Kinesis configuration without credentials for now
       this.logger.info('Kinesis client initialized', {
-        clientConfig: this.kinesis.config
+        clientConfig: {
+          region: this.kinesis.config.region,
+          maxAttempts: 3,
+          retryMode: 'standard'
+        }
       });
       
       this.metrics = new MetricsPublisher(config.awsRegion, 'NGU/BlockchainEvents');
@@ -410,13 +415,21 @@ export class EventListener {
           name: error.name,
           message: error.message,
           stack: error.stack,
+          code: (error as any).code,
+          requestId: (error as any).$metadata?.requestId,
+          cfId: (error as any).$metadata?.cfId,
+          httpStatusCode: (error as any).$metadata?.httpStatusCode
         } : error,
         eventDetails: {
           type: event.type,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber
         },
-        kinesisStream: this.config.kinesisStreamName
+        kinesisStream: this.config.kinesisStreamName,
+        kinesisConfig: {
+          region: this.kinesis.config.region,
+          endpoint: this.kinesis.config.endpoint
+        }
       });
       updateMetrics.incrementEvent('errors');
       updateMetrics.updateKinesis({
