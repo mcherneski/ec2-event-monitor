@@ -51,25 +51,30 @@ sudo chown ec2-user:ec2-user .env
 chmod 644 .env
 
 echo "Fetching environment variables from SSM..."
-# Fetch environment variables from SSM Parameter Store and create .env file
-echo "NODE_ENV=production" > .env  # Explicitly set NODE_ENV first
+# First set NODE_ENV to production
+echo "NODE_ENV=production" > .env
+
+# Then fetch all other environment variables from SSM Parameter Store
 aws ssm get-parameters-by-path \
-    --path "/event-monitor/prod" \  # Hardcode to prod instead of using ${NODE_ENV:-dev}
+    --path "/event-monitor/prod" \
     --with-decryption \
     --region us-east-1 \
     --query "Parameters[*].[Name,Value]" \
     --output text | while read -r name value; do
     # Extract parameter name after the last '/'
     param_name=$(echo "$name" | rev | cut -d'/' -f1 | rev)
-    # Don't duplicate NODE_ENV if it comes from SSM
     if [ "$param_name" != "NODE_ENV" ]; then
         echo "$param_name=$value" >> .env
     fi
 done
 
-# Verify .env file was created
+# Verify .env file was created and has content
 if [ ! -s .env ]; then
-    echo "Warning: .env file is empty or was not created"
+    echo "Error: .env file is empty or was not created"
+    exit 1
+else
+    echo "Environment variables loaded from SSM (excluding sensitive values):"
+    grep -v "KEY\|SECRET\|PASSWORD" .env || true
 fi
 
 echo "After install completed successfully"

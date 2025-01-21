@@ -25,7 +25,8 @@ const KNOWN_SIGNATURES = {
   Staked: '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
   Unstaked: '0x7fc4727e062e336010f2c282598ef5f14facb3de68cf8195c2f23e1454b2b74e'
 };
-console.log('EventListener.ts loaded');
+const version = '0.0.02'
+console.log('EventListener.ts version ' + version + ' loaded');
 export class EventListener {
   private provider: WebSocketProvider;
   private nftContract: Contract;
@@ -59,8 +60,8 @@ export class EventListener {
       this.logger.info('Contract addresses validated successfully');
       this.logger.info('Attempting to connect to WebSocket provider', { 
         url: config.wsRpcUrl,
-        expectedNFTAddress: '0xeb2Ad665644448C09a3117f900B0A2Df17866bBC',
-        expectedStakingAddress: '0xaD7327B4Ba682123D5eCFcE67214c9DDaE352c43',
+        expectedNFTAddress: '0xd79BeDA34Abf2E1336cFB6F2dE3D0D4ae4579Da7',
+        expectedStakingAddress: '0xb60efDd990f7f2A98059db9480ebd1b4b7Ba115b',
         providedNFTAddress: config.nftContractAddress,
         providedStakingAddress: config.stakingContractAddress
       });
