@@ -7,6 +7,10 @@ echo "System information:"
 cat /etc/os-release
 echo "Detecting package manager..."
 
+# Ensure we're in a valid directory
+cd /tmp
+echo "Current working directory: $(pwd)"
+
 # Detect Amazon Linux version and package manager
 if grep -q "Amazon Linux 2023" /etc/os-release; then
     echo "Amazon Linux 2023 detected, using dnf"
@@ -45,15 +49,29 @@ sudo chown ec2-user:ec2-user /home/ec2-user/event-monitor
 # Clean up existing files if any
 sudo rm -rf /home/ec2-user/event-monitor/*
 
-# Install pnpm globally
+# Create a temporary directory for npm global installations
+sudo mkdir -p /usr/local/lib/node_modules
+sudo chmod 777 /usr/local/lib/node_modules
+
+# Install pnpm globally with explicit prefix
 echo "Installing pnpm..."
-sudo npm install -g pnpm
+cd /home/ec2-user
+npm config set prefix '/usr/local'
+npm install -g pnpm || {
+    echo "Failed to install pnpm globally. Trying alternative method..."
+    curl -fsSL https://get.pnpm.io/install.sh | sh -
+}
 
 # Set up pnpm for ec2-user
 sudo -u ec2-user bash -c 'mkdir -p ~/.local/share/pnpm'
 echo 'export PNPM_HOME="/home/ec2-user/.local/share/pnpm"' | sudo tee -a /home/ec2-user/.bashrc
 echo 'export PATH="$PNPM_HOME:$PATH"' | sudo tee -a /home/ec2-user/.bashrc
+echo 'export PATH="/usr/local/bin:$PATH"' | sudo tee -a /home/ec2-user/.bashrc
+
+# Source the updated bashrc
+source /home/ec2-user/.bashrc
 
 # Verify pnpm installation
-echo "pnpm version:"
-pnpm --version 
+echo "Attempting to verify pnpm installation..."
+which pnpm || echo "pnpm not found in PATH"
+pnpm --version || echo "Failed to get pnpm version" 
