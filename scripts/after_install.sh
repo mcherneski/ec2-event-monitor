@@ -87,9 +87,9 @@ WorkingDirectory=/home/ec2-user/event-monitor
 Environment=NODE_ENV=production
 Environment=DEBUG=*
 Environment=NODE_DEBUG=*
-Environment=NODE_OPTIONS=--trace-warnings
+Environment=NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node"
 EnvironmentFile=-/home/ec2-user/event-monitor/.env
-ExecStart=/bin/sh -c '${NODE_PATH} dist/run.js 2>&1 | tee -a /var/log/event-listener.error.log'
+ExecStart=${NODE_PATH} --experimental-specifier-resolution=node dist/run.js
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/event-listener.log
@@ -116,7 +116,8 @@ sudo chmod 644 /var/log/event-listener.log /var/log/event-listener.error.log
 echo "Testing Node.js application..."
 cd /home/ec2-user/event-monitor
 echo "Running test with full debug output:"
-sudo -u ec2-user NODE_ENV=production DEBUG=* NODE_DEBUG=* node --trace-warnings dist/run.js 2>&1 | tee /tmp/node-test.log &
+sudo -u ec2-user NODE_ENV=production DEBUG=* NODE_DEBUG=* NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node" \
+  node --experimental-specifier-resolution=node dist/run.js 2>&1 | tee /tmp/node-test.log &
 PID=$!
 sleep 5
 echo "Test run output:"

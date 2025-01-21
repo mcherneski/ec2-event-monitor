@@ -309,9 +309,26 @@ export class EventListener {
 
   private async handleEvent(event: OnChainEvent) {
     try {
+      this.logger.info('Starting handleEvent processing', {
+        eventType: event.type,
+        transactionHash: event.transactionHash,
+        blockNumber: event.blockNumber
+      });
+
       // Update event metrics based on type
       updateMetrics.incrementEvent(event.type.toLowerCase() as any);
+      this.logger.info('Metrics updated for event type', {
+        eventType: event.type,
+        metricsUpdated: true
+      });
       
+      // Log the event payload before sending to Kinesis
+      this.logger.info('Preparing to send event to Kinesis', {
+        streamName: this.config.kinesisStreamName,
+        eventPayload: event,
+        payloadSize: Buffer.from(JSON.stringify(event)).length
+      });
+
       // Send to Kinesis
       const result = await this.kinesis.send(new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
@@ -326,13 +343,27 @@ export class EventListener {
         lastBatchTime: Date.now()
       });
 
-      this.logger.info('Event sent to Kinesis', {
+      this.logger.info('Event successfully sent to Kinesis', {
         type: event.type,
         transactionHash: event.transactionHash,
-        shardId: result.ShardId
+        shardId: result.ShardId,
+        sequenceNumber: result.SequenceNumber,
+        kinesisResponse: result
       });
     } catch (error) {
-      this.logger.error('Failed to send event to Kinesis', { error, event });
+      this.logger.error('Failed to send event to Kinesis', { 
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        } : error,
+        eventDetails: {
+          type: event.type,
+          transactionHash: event.transactionHash,
+          blockNumber: event.blockNumber
+        },
+        kinesisStream: this.config.kinesisStreamName
+      });
       updateMetrics.incrementEvent('errors');
       updateMetrics.updateKinesis({
         errors: metrics.kinesis.errors + 1
