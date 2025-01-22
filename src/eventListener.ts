@@ -431,8 +431,8 @@ export class EventListener {
       const data = Buffer.from(JSON.stringify(event));
       const command = new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
-        // Use a combination of event type and tokenId as partition key for better distribution
-        PartitionKey: `${event.type}-${event.tokenId}`,
+        // Use a combination of event type and id as partition key for better distribution
+        PartitionKey: `${event.type}-${event.id}`,
         Data: data
       });
 
