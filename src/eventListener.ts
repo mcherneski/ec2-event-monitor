@@ -196,12 +196,13 @@ export class EventListener {
         tokenId: tokenId.toString(),
         id: id.toString(),
         blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
+        transactionHash: event.transactionHash,
+        transactionIndex: event.transactionIndex
       });
 
       try {
         const block = await event.getBlock();
-        await this.handleEvent({
+        const eventPayload: OnChainEvent = {
           type: 'Mint',
           to: to.toLowerCase(),
           tokenId: tokenId.toString(),
@@ -210,7 +211,15 @@ export class EventListener {
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
           transactionIndex: event.transactionIndex
+        };
+        
+        this.logger.info('Mint event payload prepared', {
+          ...eventPayload,
+          hasBlockNumber: typeof eventPayload.blockNumber === 'number',
+          hasTransactionIndex: typeof eventPayload.transactionIndex === 'number'
         });
+        
+        await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('Error in Mint event handler', {
           error: error instanceof Error ? {
@@ -218,9 +227,12 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            to, tokenId: tokenId.toString(), id: id.toString(),
+            to, 
+            tokenId: tokenId.toString(), 
+            id: id.toString(),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
+            transactionHash: event.transactionHash,
+            transactionIndex: event.transactionIndex
           }
         });
       }
