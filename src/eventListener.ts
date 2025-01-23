@@ -193,6 +193,8 @@ export class EventListener {
         blockNumberType: typeof event.blockNumber,
         transactionIndex: event.transactionIndex,
         transactionIndexType: typeof event.transactionIndex,
+        logIndex: event.index,
+        logIndexType: typeof event.index,
         address: event.address,
         topics: event.topics,
         transactionHash: event.transactionHash
@@ -206,6 +208,7 @@ export class EventListener {
         this.logger.info('Transaction receipt:', {
           blockNumber: receipt.blockNumber,
           transactionIndex: receipt.index,
+          logIndex: event.index,
           blockHash: receipt.blockHash,
           status: receipt.status
         });
@@ -214,19 +217,22 @@ export class EventListener {
           type: 'Mint',
           to: to.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: id.toString(),
+          id: parseInt(id.toString()),
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
-          transactionIndex: receipt.index
+          transactionIndex: receipt.index,
+          logIndex: event.index.toString(16)
         };
         
         this.logger.info('Mint event payload prepared', {
           ...eventPayload,
           hasBlockNumber: typeof eventPayload.blockNumber === 'number',
           hasTransactionIndex: typeof eventPayload.transactionIndex === 'number',
+          hasLogIndex: typeof event.index === 'number',
           blockNumberValue: eventPayload.blockNumber,
-          transactionIndexValue: eventPayload.transactionIndex
+          transactionIndexValue: eventPayload.transactionIndex,
+          logIndexValue: event.index
         });
         
         await this.handleEvent(eventPayload);
@@ -239,10 +245,11 @@ export class EventListener {
           eventData: {
             to, 
             tokenId: tokenId.toString(), 
-            id: id.toString(),
+            id: parseInt(id.toString()),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash,
-            transactionIndex: event.transactionIndex
+            transactionIndex: event.transactionIndex,
+            logIndex: event.index
           }
         });
       }
@@ -259,8 +266,9 @@ export class EventListener {
           to,
           stakingContract: this.stakingContract.target,
           tokenId: tokenId.toString(),
-          id: id.toString(),
-          transactionHash: event.transactionHash
+          id: parseInt(id.toString()),
+          transactionHash: event.transactionHash,
+          logIndex: event.index
         });
         return;
       }
@@ -272,11 +280,12 @@ export class EventListener {
           from: from.toLowerCase(),
           to: to.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: id.toString(),
+          id: parseInt(id.toString()),
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
-          transactionIndex: event.transactionIndex
+          transactionIndex: event.transactionIndex,
+          logIndex: event.index.toString(16)
         });
       } catch (error) {
         this.logger.error('Error in Transfer event handler', {
@@ -287,7 +296,8 @@ export class EventListener {
           eventData: {
             from, to, tokenId: tokenId.toString(), id: id.toString(),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
+            transactionHash: event.transactionHash,
+            logIndex: event.index
           }
         });
       }
@@ -301,11 +311,12 @@ export class EventListener {
           type: 'Burn',
           from: from.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: id.toString(),
+          id: parseInt(id.toString()),
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
-          transactionIndex: event.transactionIndex
+          transactionIndex: event.transactionIndex,
+          logIndex: event.index.toString(16)
         });
       } catch (error) {
         this.logger.error('Error in Burn event handler', {
@@ -316,7 +327,8 @@ export class EventListener {
           eventData: {
             from, tokenId: tokenId.toString(), id: id.toString(),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
+            transactionHash: event.transactionHash,
+            logIndex: event.index
           }
         });
       }
@@ -330,11 +342,12 @@ export class EventListener {
           type: 'Staked',
           staker: staker.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: id.toString(),
+          id: parseInt(id.toString()),
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
-          transactionIndex: event.transactionIndex
+          transactionIndex: event.transactionIndex,
+          logIndex: event.index.toString(16)
         });
       } catch (error) {
         this.logger.error('Error in Staked event handler', {
@@ -345,7 +358,8 @@ export class EventListener {
           eventData: {
             staker, tokenId: tokenId.toString(), id: id.toString(),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
+            transactionHash: event.transactionHash,
+            logIndex: event.index
           }
         });
       }
@@ -358,11 +372,12 @@ export class EventListener {
           type: 'Unstaked',
           staker: staker.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: id.toString(),
+          id: parseInt(id.toString()),
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
-          transactionIndex: event.transactionIndex
+          transactionIndex: event.transactionIndex,
+          logIndex: event.index.toString(16)
         });
       } catch (error) {
         this.logger.error('Error in Unstaked event handler', {
@@ -371,9 +386,10 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            staker, tokenId: tokenId.toString(), id: id.toString(),
+            staker, tokenId: tokenId.toString(), id: parseInt(id.toString()),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
+            transactionHash: event.transactionHash,
+            logIndex: event.index
           }
         });
       }

@@ -1,7 +1,7 @@
 export interface OnChainEvent {
   type: 'Transfer' | 'Staked' | 'Unstaked' | 'Mint' | 'Burn';
   tokenId: string;
-  id: string;
+  id: number;
   from?: string;
   to?: string;
   staker?: string;
@@ -9,6 +9,7 @@ export interface OnChainEvent {
   transactionHash: string;
   blockNumber: number;
   transactionIndex: number;
+  logIndex: string;
 }
 
 export interface MetricData {
