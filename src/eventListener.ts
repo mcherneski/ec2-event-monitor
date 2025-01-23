@@ -216,7 +216,9 @@ export class EventListener {
         this.logger.info('Mint event payload prepared', {
           ...eventPayload,
           hasBlockNumber: typeof eventPayload.blockNumber === 'number',
-          hasTransactionIndex: typeof eventPayload.transactionIndex === 'number'
+          hasTransactionIndex: typeof eventPayload.transactionIndex === 'number',
+          blockNumberValue: eventPayload.blockNumber,
+          transactionIndexValue: eventPayload.transactionIndex
         });
         
         await this.handleEvent(eventPayload);
@@ -411,6 +413,14 @@ export class EventListener {
       this.logger.info('Preparing to send event to Kinesis', {
         streamName: this.config.kinesisStreamName,
         eventPayload: event,
+        eventDetails: {
+          hasBlockNumber: 'blockNumber' in event,
+          blockNumberType: typeof event.blockNumber,
+          blockNumberValue: event.blockNumber,
+          hasTransactionIndex: 'transactionIndex' in event,
+          transactionIndexType: typeof event.transactionIndex,
+          transactionIndexValue: event.transactionIndex
+        },
         payloadSize: Buffer.from(JSON.stringify(event)).length,
         kinesisConfig: {
           region: this.kinesis.config.region,
