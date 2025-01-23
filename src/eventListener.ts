@@ -268,19 +268,19 @@ export class EventListener {
 
     // NFT Contract Transfer Event
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
-      // Skip transfers to/from staking contract
+      // Don't skip transfers to/from staking contract anymore - we need these events
+      // But log them for debugging
       if (typeof this.stakingContract.target === 'string' &&
           (from.toLowerCase() === this.stakingContract.target.toLowerCase() ||
            to.toLowerCase() === this.stakingContract.target.toLowerCase())) {
-        this.logger.info('Skipping Transfer event involving staking contract', {
+        this.logger.info('Transfer event involving staking contract', {
           from,
           to,
           stakingContract: this.stakingContract.target,
           tokenId: tokenId.toString(),
-          id: typeof id === 'bigint' ? id.toString() : id,
+          id: id,
           transactionHash: event.transactionHash
         });
-        return;
       }
 
       try {
@@ -377,7 +377,7 @@ export class EventListener {
     });
 
     // Staking Contract Events
-    this.stakingContract.on('Staked', async (staker, id, tokenId, event) => {
+    this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
@@ -385,13 +385,32 @@ export class EventListener {
         // Convert tokenId to hex string with proper padding
         const tokenIdHex = ethers.toBeHex(tokenId, 32);
         
-        // Find the Staked event log by matching the signature and tokenId
-        const stakedEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
+        // Log all event logs for debugging
+        this.logger.info('Staking event logs', {
+          allLogs: receipt.logs.map((log: { topics: string[]; address: string; index: number }) => ({
+            topics: log.topics,
+            address: log.address,
+            index: log.index
+          }))
+        });
+        
+        // Find the Staked event log by matching the signature and tokenId in the correct topic position
+        const stakedEventLog = receipt.logs.find((log: { topics: string[]; address: string; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Staked && 
-          log.topics[2] === tokenIdHex
+          log.topics[1] === tokenIdHex &&  // Changed from topics[2] to topics[1]
+          log.address.toLowerCase() === this.stakingContract.target.toString().toLowerCase()  // Also verify contract address
         );
 
         if (!stakedEventLog) {
+          this.logger.error('Could not find Staked event log', {
+            signature: KNOWN_SIGNATURES.Staked,
+            tokenIdHex,
+            contractAddress: this.stakingContract.target,
+            availableLogs: receipt.logs.map((log: { topics: string[]; address: string }) => ({
+              topics: log.topics,
+              address: log.address
+            }))
+          });
           throw new Error('Could not find Staked event log in transaction receipt');
         }
 
@@ -401,7 +420,7 @@ export class EventListener {
           type: 'Staked',
           staker: staker.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: id,  // Keep as number, no conversion needed
+          id: id,  // Keep as number
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
@@ -415,9 +434,10 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            staker, tokenId: tokenId.toString(), id,  // Keep as number
+            staker, tokenId: tokenId.toString(), id,
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
+            transactionHash: event.transactionHash,
+            contractAddress: this.stakingContract.target
           }
         });
       }
