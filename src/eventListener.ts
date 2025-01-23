@@ -188,6 +188,16 @@ export class EventListener {
 
     // NFT Contract Events
     this.nftContract.on('Mint', async (to, tokenId, id, event) => {
+      this.logger.info('Raw blockchain event:', {
+        event: {
+          ...event,
+          blockNumber: event.blockNumber,
+          blockNumberType: typeof event.blockNumber,
+          transactionIndex: event.transactionIndex,
+          transactionIndexType: typeof event.transactionIndex
+        }
+      });
+
       this.logger.info('Mint event detected', {
         eventName: 'Mint',
         contractAddress: event.address,
