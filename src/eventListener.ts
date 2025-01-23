@@ -199,10 +199,13 @@ export class EventListener {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
+        // Convert tokenId to hex string with proper padding
+        const tokenIdHex = ethers.toBeHex(tokenId, 32);
+        
         // Find the Mint event log by matching the signature and tokenId
         const mintEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Mint && 
-          log.topics[2] === tokenId.toHexString()
+          log.topics[2] === tokenIdHex
         );
 
         if (!mintEventLog) {
@@ -283,10 +286,13 @@ export class EventListener {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
         
+        // Convert tokenId to hex string with proper padding
+        const tokenIdHex = ethers.toBeHex(tokenId, 32);
+        
         // Find the Transfer event log by matching the signature and tokenId
         const transferEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Transfer && 
-          log.topics[3] === tokenId.toHexString()
+          log.topics[3] === tokenIdHex
         );
 
         if (!transferEventLog) {
@@ -328,10 +334,13 @@ export class EventListener {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
         
+        // Convert tokenId to hex string with proper padding
+        const tokenIdHex = ethers.toBeHex(tokenId, 32);
+        
         // Find the Burn event log by matching the signature and tokenId
         const burnEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Burn && 
-          log.topics[2] === tokenId.toHexString()
+          log.topics[2] === tokenIdHex
         );
 
         if (!burnEventLog) {
@@ -372,10 +381,13 @@ export class EventListener {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
         
+        // Convert tokenId to hex string with proper padding
+        const tokenIdHex = ethers.toBeHex(tokenId, 32);
+        
         // Find the Staked event log by matching the signature and tokenId
         const stakedEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Staked && 
-          log.topics[2] === tokenId.toHexString()
+          log.topics[2] === tokenIdHex
         );
 
         if (!stakedEventLog) {
@@ -415,10 +427,13 @@ export class EventListener {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
         
+        // Convert tokenId to hex string with proper padding
+        const tokenIdHex = ethers.toBeHex(tokenId, 32);
+        
         // Find the Unstaked event log by matching the signature and tokenId
         const unstakedEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Unstaked && 
-          log.topics[2] === tokenId.toHexString()
+          log.topics[2] === tokenIdHex
         );
 
         if (!unstakedEventLog) {
