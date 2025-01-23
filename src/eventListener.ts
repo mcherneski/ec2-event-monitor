@@ -205,10 +205,13 @@ export class EventListener {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
+        // Get the log index from the receipt
+        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
+        
         this.logger.info('Transaction receipt:', {
           blockNumber: receipt.blockNumber,
           transactionIndex: receipt.index,
-          logIndex: event.index,
+          logIndex: logIndex,
           blockHash: receipt.blockHash,
           status: receipt.status
         });
@@ -222,17 +225,17 @@ export class EventListener {
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
           transactionIndex: receipt.index,
-          logIndex: event.index.toString(16)
+          logIndex: logIndex.toString(16)  // Convert to hex string
         };
         
         this.logger.info('Mint event payload prepared', {
           ...eventPayload,
           hasBlockNumber: typeof eventPayload.blockNumber === 'number',
           hasTransactionIndex: typeof eventPayload.transactionIndex === 'number',
-          hasLogIndex: typeof event.index === 'number',
+          hasLogIndex: typeof logIndex === 'number',
           blockNumberValue: eventPayload.blockNumber,
           transactionIndexValue: eventPayload.transactionIndex,
-          logIndexValue: event.index
+          logIndexValue: logIndex
         });
         
         await this.handleEvent(eventPayload);
@@ -267,14 +270,16 @@ export class EventListener {
           stakingContract: this.stakingContract.target,
           tokenId: tokenId.toString(),
           id: parseInt(id.toString()),
-          transactionHash: event.transactionHash,
-          logIndex: event.index
+          transactionHash: event.transactionHash
         });
         return;
       }
 
       try {
         const block = await event.getBlock();
+        const receipt = await event.getTransactionReceipt();
+        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
+
         await this.handleEvent({
           type: 'Transfer',
           from: from.toLowerCase(),
@@ -285,7 +290,7 @@ export class EventListener {
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
           transactionIndex: event.transactionIndex,
-          logIndex: event.index.toString(16)
+          logIndex: logIndex.toString(16)  // Convert to hex string
         });
       } catch (error) {
         this.logger.error('Error in Transfer event handler', {
@@ -296,8 +301,7 @@ export class EventListener {
           eventData: {
             from, to, tokenId: tokenId.toString(), id: id.toString(),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash,
-            logIndex: event.index
+            transactionHash: event.transactionHash
           }
         });
       }
@@ -307,6 +311,9 @@ export class EventListener {
     this.nftContract.on('Burn', async (from, tokenId, id, event) => {
       try {
         const block = await event.getBlock();
+        const receipt = await event.getTransactionReceipt();
+        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
+
         await this.handleEvent({
           type: 'Burn',
           from: from.toLowerCase(),
@@ -316,7 +323,7 @@ export class EventListener {
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
           transactionIndex: event.transactionIndex,
-          logIndex: event.index.toString(16)
+          logIndex: logIndex.toString(16)  // Convert to hex string
         });
       } catch (error) {
         this.logger.error('Error in Burn event handler', {
@@ -327,8 +334,7 @@ export class EventListener {
           eventData: {
             from, tokenId: tokenId.toString(), id: id.toString(),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash,
-            logIndex: event.index
+            transactionHash: event.transactionHash
           }
         });
       }
@@ -338,6 +344,9 @@ export class EventListener {
     this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
       try {
         const block = await event.getBlock();
+        const receipt = await event.getTransactionReceipt();
+        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
+
         await this.handleEvent({
           type: 'Staked',
           staker: staker.toLowerCase(),
@@ -347,7 +356,7 @@ export class EventListener {
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
           transactionIndex: event.transactionIndex,
-          logIndex: event.index.toString(16)
+          logIndex: logIndex.toString(16)  // Convert to hex string
         });
       } catch (error) {
         this.logger.error('Error in Staked event handler', {
@@ -358,8 +367,7 @@ export class EventListener {
           eventData: {
             staker, tokenId: tokenId.toString(), id: id.toString(),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash,
-            logIndex: event.index
+            transactionHash: event.transactionHash
           }
         });
       }
@@ -368,6 +376,9 @@ export class EventListener {
     this.stakingContract.on('Unstaked', async (staker, tokenId, id, event) => {
       try {
         const block = await event.getBlock();
+        const receipt = await event.getTransactionReceipt();
+        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
+
         await this.handleEvent({
           type: 'Unstaked',
           staker: staker.toLowerCase(),
@@ -377,7 +388,7 @@ export class EventListener {
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
           transactionIndex: event.transactionIndex,
-          logIndex: event.index.toString(16)
+          logIndex: logIndex.toString(16)  // Convert to hex string
         });
       } catch (error) {
         this.logger.error('Error in Unstaked event handler', {
@@ -386,10 +397,9 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            staker, tokenId: tokenId.toString(), id: parseInt(id.toString()),
+            staker, tokenId: tokenId.toString(), id: id.toString(),
             blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash,
-            logIndex: event.index
+            transactionHash: event.transactionHash
           }
         });
       }
