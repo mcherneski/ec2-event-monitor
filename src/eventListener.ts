@@ -189,15 +189,9 @@ export class EventListener {
     // NFT Contract Events
     this.nftContract.on('Mint', async (to, tokenId, id, event) => {
       this.logger.info('Raw blockchain event:', {
-        blockNumber: event.blockNumber,
         blockNumberType: typeof event.blockNumber,
-        transactionIndex: event.transactionIndex,
         transactionIndexType: typeof event.transactionIndex,
-        logIndex: event.index,
-        logIndexType: typeof event.index,
-        address: event.address,
-        topics: event.topics,
-        transactionHash: event.transactionHash
+        logIndexType: typeof event.index
       });
 
       try {
@@ -205,30 +199,18 @@ export class EventListener {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
-        // Detailed receipt logging
-        console.log('Full receipt:', JSON.stringify(receipt, null, 2));
-        console.log('Receipt logs:', JSON.stringify(receipt.logs, null, 2));
-        console.log('Event index:', event.index);
-        
-        // Try different ways to get log index
-        const logIndexFromEvent = event.index;
-        const logIndexFromLogs = receipt.logs.findIndex(
-          (log: { transactionHash: string; topics: string[] }) => 
-            log.transactionHash === event.transactionHash && 
-            log.topics[0] === event.topics[0]
+        // Find the Mint event log by matching the signature and tokenId
+        const mintEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
+          log.topics[0] === KNOWN_SIGNATURES.Mint && 
+          log.topics[2] === tokenId.toHexString()
         );
-        const actualLogIndex = receipt.logs[logIndexFromLogs]?.logIndex;
-        
-        console.log('Log index comparison:', {
-          fromEvent: logIndexFromEvent,
-          fromLogsSearch: logIndexFromLogs,
-          actualLogIndex,
-          logsLength: receipt.logs.length
-        });
 
-        // Use the first non-null value in order of preference
-        const logIndex = actualLogIndex ?? logIndexFromLogs ?? logIndexFromEvent ?? 0;
-        
+        if (!mintEventLog) {
+          throw new Error('Could not find Mint event log in transaction receipt');
+        }
+
+        const logIndex = mintEventLog.index;
+
         this.logger.info('Transaction receipt:', {
           blockNumber: receipt.blockNumber,
           transactionIndex: receipt.index,
@@ -259,7 +241,7 @@ export class EventListener {
           transactionIndexValue: eventPayload.transactionIndex,
           logIndexValue: logIndex
         });
-        
+
         await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('Error in Mint event handler', {
@@ -300,7 +282,18 @@ export class EventListener {
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
-        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
+        
+        // Find the Transfer event log by matching the signature and tokenId
+        const transferEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
+          log.topics[0] === KNOWN_SIGNATURES.Transfer && 
+          log.topics[3] === tokenId.toHexString()
+        );
+
+        if (!transferEventLog) {
+          throw new Error('Could not find Transfer event log in transaction receipt');
+        }
+
+        const logIndex = transferEventLog.index;
 
         await this.handleEvent({
           type: 'Transfer',
@@ -334,7 +327,18 @@ export class EventListener {
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
-        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
+        
+        // Find the Burn event log by matching the signature and tokenId
+        const burnEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
+          log.topics[0] === KNOWN_SIGNATURES.Burn && 
+          log.topics[2] === tokenId.toHexString()
+        );
+
+        if (!burnEventLog) {
+          throw new Error('Could not find Burn event log in transaction receipt');
+        }
+
+        const logIndex = burnEventLog.index;
 
         await this.handleEvent({
           type: 'Burn',
@@ -367,7 +371,18 @@ export class EventListener {
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
-        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
+        
+        // Find the Staked event log by matching the signature and tokenId
+        const stakedEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
+          log.topics[0] === KNOWN_SIGNATURES.Staked && 
+          log.topics[2] === tokenId.toHexString()
+        );
+
+        if (!stakedEventLog) {
+          throw new Error('Could not find Staked event log in transaction receipt');
+        }
+
+        const logIndex = stakedEventLog.index;
 
         await this.handleEvent({
           type: 'Staked',
@@ -399,8 +414,19 @@ export class EventListener {
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
-        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
-        console.log('logIndex', logIndex);
+        
+        // Find the Unstaked event log by matching the signature and tokenId
+        const unstakedEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
+          log.topics[0] === KNOWN_SIGNATURES.Unstaked && 
+          log.topics[2] === tokenId.toHexString()
+        );
+
+        if (!unstakedEventLog) {
+          throw new Error('Could not find Unstaked event log in transaction receipt');
+        }
+
+        const logIndex = unstakedEventLog.index;
+
         await this.handleEvent({
           type: 'Unstaked',
           staker: staker.toLowerCase(),
