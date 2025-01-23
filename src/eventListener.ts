@@ -377,13 +377,13 @@ export class EventListener {
     });
 
     // Staking Contract Events
-    this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
+    this.stakingContract.on('Staked', async (staker, id, tokenId, event) => {
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
         
-        // Convert tokenId to hex string with proper padding
-        const tokenIdHex = ethers.toBeHex(tokenId, 32);
+        // Convert id to hex string with proper padding (since id is now the indexed parameter)
+        const idHex = ethers.toBeHex(id, 32);
         
         // Log all event logs for debugging
         this.logger.info('Staking event logs', {
@@ -394,17 +394,17 @@ export class EventListener {
           }))
         });
         
-        // Find the Staked event log by matching the signature and tokenId in the correct topic position
+        // Find the Staked event log by matching the signature and id in the correct topic position
         const stakedEventLog = receipt.logs.find((log: { topics: string[]; address: string; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Staked && 
-          log.topics[1] === tokenIdHex &&  // Changed from topics[2] to topics[1]
-          log.address.toLowerCase() === this.stakingContract.target.toString().toLowerCase()  // Also verify contract address
+          log.topics[1] === idHex &&
+          log.address.toLowerCase() === this.stakingContract.target.toString().toLowerCase()
         );
 
         if (!stakedEventLog) {
           this.logger.error('Could not find Staked event log', {
             signature: KNOWN_SIGNATURES.Staked,
-            tokenIdHex,
+            idHex,
             contractAddress: this.stakingContract.target,
             availableLogs: receipt.logs.map((log: { topics: string[]; address: string }) => ({
               topics: log.topics,
@@ -419,13 +419,13 @@ export class EventListener {
         await this.handleEvent({
           type: 'Staked',
           staker: staker.toLowerCase(),
-          tokenId: tokenId.toString(),
-          id: id,  // Keep as number
+          tokenId: tokenId.toString(),  // This is now the long number
+          id: Number(id),  // This is now the numeric ID
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
           transactionIndex: event.transactionIndex,
-          logIndex: logIndex.toString(16)  // Convert to hex string
+          logIndex: logIndex.toString(16)
         });
       } catch (error) {
         this.logger.error('Error in Staked event handler', {
@@ -434,7 +434,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            staker, tokenId: tokenId.toString(), id,
+            staker, tokenId: tokenId.toString(), id: Number(id),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash,
             contractAddress: this.stakingContract.target
@@ -448,13 +448,13 @@ export class EventListener {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
         
-        // Convert tokenId to hex string with proper padding
-        const tokenIdHex = ethers.toBeHex(tokenId, 32);
+        // Convert id to hex string with proper padding
+        const idHex = ethers.toBeHex(id, 32);
         
-        // Find the Unstaked event log by matching the signature and tokenId
+        // Find the Unstaked event log by matching the signature and id
         const unstakedEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Unstaked && 
-          log.topics[2] === tokenIdHex
+          log.topics[1] === idHex
         );
 
         if (!unstakedEventLog) {
@@ -466,13 +466,13 @@ export class EventListener {
         await this.handleEvent({
           type: 'Unstaked',
           staker: staker.toLowerCase(),
-          tokenId: tokenId.toString(),
-          id: id,  // Keep as number, no conversion needed
+          tokenId: tokenId.toString(),  // This is now the long number
+          id: Number(id),  // This is now the numeric ID
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
           transactionIndex: event.transactionIndex,
-          logIndex: logIndex.toString(16)  // Convert to hex string
+          logIndex: logIndex.toString(16)
         });
       } catch (error) {
         this.logger.error('Error in Unstaked event handler', {
@@ -481,7 +481,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            staker, tokenId: tokenId.toString(), id,  // Keep as number
+            staker, tokenId: tokenId.toString(), id: Number(id),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
