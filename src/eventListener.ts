@@ -205,18 +205,37 @@ export class EventListener {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
-        console.log(`Mint receipt: ${receipt}`);
-        console.log(`Mint event block: ${block}`);
-        // Get the log index from the receipt
-        const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
-        console.log(`Mint log index: ${logIndex}`);
+        // Detailed receipt logging
+        console.log('Full receipt:', JSON.stringify(receipt, null, 2));
+        console.log('Receipt logs:', JSON.stringify(receipt.logs, null, 2));
+        console.log('Event index:', event.index);
+        
+        // Try different ways to get log index
+        const logIndexFromEvent = event.index;
+        const logIndexFromLogs = receipt.logs.findIndex(
+          (log: { transactionHash: string; topics: string[] }) => 
+            log.transactionHash === event.transactionHash && 
+            log.topics[0] === event.topics[0]
+        );
+        const actualLogIndex = receipt.logs[logIndexFromLogs]?.logIndex;
+        
+        console.log('Log index comparison:', {
+          fromEvent: logIndexFromEvent,
+          fromLogsSearch: logIndexFromLogs,
+          actualLogIndex,
+          logsLength: receipt.logs.length
+        });
 
+        // Use the first non-null value in order of preference
+        const logIndex = actualLogIndex ?? logIndexFromLogs ?? logIndexFromEvent ?? 0;
+        
         this.logger.info('Transaction receipt:', {
           blockNumber: receipt.blockNumber,
           transactionIndex: receipt.index,
           logIndex: logIndex,
           blockHash: receipt.blockHash,
-          status: receipt.status
+          status: receipt.status,
+          logsLength: receipt.logs.length
         });
 
         const eventPayload: OnChainEvent = {
