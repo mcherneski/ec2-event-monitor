@@ -205,9 +205,12 @@ export class EventListener {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
+        console.log(`Mint receipt: ${receipt}`);
+        console.log(`Mint event block: ${block}`);
         // Get the log index from the receipt
         const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
-        
+        console.log(`Mint log index: ${logIndex}`);
+
         this.logger.info('Transaction receipt:', {
           blockNumber: receipt.blockNumber,
           transactionIndex: receipt.index,
@@ -378,7 +381,7 @@ export class EventListener {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
         const logIndex = receipt.logs[event.index]?.logIndex ?? 0;
-
+        console.log('logIndex', logIndex);
         await this.handleEvent({
           type: 'Unstaked',
           staker: staker.toLowerCase(),
