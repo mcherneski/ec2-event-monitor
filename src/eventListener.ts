@@ -198,20 +198,18 @@ export class EventListener {
         transactionHash: event.transactionHash
       });
 
-      this.logger.info('Mint event detected', {
-        eventName: 'Mint',
-        contractAddress: event.address,
-        eventTopics: event.topics,
-        to,
-        tokenId: tokenId.toString(),
-        id: id.toString(),
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash,
-        transactionIndex: event.transactionIndex
-      });
-
       try {
+        // Wait for transaction receipt to get block info
+        const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
+        
+        this.logger.info('Transaction receipt:', {
+          blockNumber: receipt.blockNumber,
+          transactionIndex: receipt.index,
+          blockHash: receipt.blockHash,
+          status: receipt.status
+        });
+
         const eventPayload: OnChainEvent = {
           type: 'Mint',
           to: to.toLowerCase(),
@@ -219,8 +217,8 @@ export class EventListener {
           id: id.toString(),
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
-          blockNumber: event.blockNumber,
-          transactionIndex: event.transactionIndex
+          blockNumber: receipt.blockNumber,
+          transactionIndex: receipt.index
         };
         
         this.logger.info('Mint event payload prepared', {
