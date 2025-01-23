@@ -227,7 +227,7 @@ export class EventListener {
           type: 'Mint',
           to: to.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: parseInt(id.toString()),
+          id: typeof id === 'bigint' ? id.toString() : id,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -256,7 +256,7 @@ export class EventListener {
           eventData: {
             to, 
             tokenId: tokenId.toString(), 
-            id: parseInt(id.toString()),
+            id: typeof id === 'bigint' ? id.toString() : id,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash,
             transactionIndex: event.transactionIndex,
@@ -277,7 +277,7 @@ export class EventListener {
           to,
           stakingContract: this.stakingContract.target,
           tokenId: tokenId.toString(),
-          id: parseInt(id.toString()),
+          id: typeof id === 'bigint' ? id.toString() : id,
           transactionHash: event.transactionHash
         });
         return;
@@ -307,7 +307,7 @@ export class EventListener {
           from: from.toLowerCase(),
           to: to.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: parseInt(id.toString()),
+          id: typeof id === 'bigint' ? id.toString() : id,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
@@ -321,7 +321,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            from, to, tokenId: tokenId.toString(), id: id.toString(),
+            from, to, tokenId: tokenId.toString(), id: typeof id === 'bigint' ? id.toString() : id,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -354,7 +354,7 @@ export class EventListener {
           type: 'Burn',
           from: from.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: parseInt(id.toString()),
+          id: typeof id === 'bigint' ? id.toString() : id,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
@@ -368,7 +368,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            from, tokenId: tokenId.toString(), id: id.toString(),
+            from, tokenId: tokenId.toString(), id: typeof id === 'bigint' ? id.toString() : id,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -377,7 +377,7 @@ export class EventListener {
     });
 
     // Staking Contract Events
-    this.stakingContract.on('Staked', async (staker, tokenId, id, event) => {
+    this.stakingContract.on('Staked', async (staker, id, tokenId, event) => {
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
@@ -401,7 +401,7 @@ export class EventListener {
           type: 'Staked',
           staker: staker.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: id,
+          id: id,  // Keep as number, no conversion needed
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
@@ -415,7 +415,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            staker, tokenId: tokenId.toString(), id: id.toString(),
+            staker, tokenId: tokenId.toString(), id,  // Keep as number
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -423,7 +423,7 @@ export class EventListener {
       }
     });
 
-    this.stakingContract.on('Unstaked', async (staker, tokenId, id, event) => {
+    this.stakingContract.on('Unstaked', async (staker, id, tokenId, event) => {
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
@@ -447,7 +447,7 @@ export class EventListener {
           type: 'Unstaked',
           staker: staker.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: id,
+          id: id,  // Keep as number, no conversion needed
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
@@ -461,7 +461,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            staker, tokenId: tokenId.toString(), id: id.toString(),
+            staker, tokenId: tokenId.toString(), id,  // Keep as number
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
