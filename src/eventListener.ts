@@ -246,6 +246,7 @@ export class EventListener {
         });
 
         await this.handleEvent(eventPayload);
+        
       } catch (error) {
         this.logger.error('Error in Mint event handler', {
           error: error instanceof Error ? {
@@ -532,13 +533,16 @@ export class EventListener {
       this.logger.info('Creating PutRecordCommand', {
         streamName: this.config.kinesisStreamName,
         eventType: event.type,
-        transactionHash: event.transactionHash
+        transactionHash: event.transactionHash,
+        eventId: event.id,
+        idType: typeof event.id,
+        eventData: event
       });
 
       const data = Buffer.from(JSON.stringify(event));
       const command = new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
-        // Use a combination of event type and id as partition key for better distribution
+        // Use a combination of event type and display ID as partition key
         PartitionKey: `${event.type}-${event.id}`,
         Data: data
       });
