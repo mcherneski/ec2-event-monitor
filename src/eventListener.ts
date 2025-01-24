@@ -317,9 +317,10 @@ export class EventListener {
           });
 
           await this.handleEvent(stakingEvent);
+          return; // Skip sending the transfer event
         }
 
-        // Always process the transfer event itself
+        // Only process non-staking transfers
         await this.handleEvent({
           type: 'Transfer',
           from: from.toLowerCase(),
