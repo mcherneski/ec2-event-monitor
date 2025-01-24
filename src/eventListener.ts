@@ -25,8 +25,6 @@ const KNOWN_SIGNATURES = {
   Staked: '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
   Unstaked: '0x7fc4727e062e336010f2c282598ef5f14facb3de68cf8195c2f23e1454b2b74e'
 };
-const version = '0.0.02'
-console.log('EventListener.ts version ' + version + ' loaded');
 export class EventListener {
   private provider: WebSocketProvider;
   private nftContract: Contract;
@@ -188,12 +186,6 @@ export class EventListener {
 
     // NFT Contract Events
     this.nftContract.on('Mint', async (to, tokenId, id, event) => {
-      this.logger.info('Raw blockchain event:', {
-        blockNumberType: typeof event.blockNumber,
-        transactionIndexType: typeof event.transactionIndex,
-        logIndexType: typeof event.index
-      });
-
       try {
         // Wait for transaction receipt to get block info
         const receipt = await event.getTransactionReceipt();
@@ -214,15 +206,6 @@ export class EventListener {
 
         const logIndex = mintEventLog.index;
 
-        this.logger.info('Transaction receipt:', {
-          blockNumber: receipt.blockNumber,
-          transactionIndex: receipt.index,
-          logIndex: logIndex,
-          blockHash: receipt.blockHash,
-          status: receipt.status,
-          logsLength: receipt.logs.length
-        });
-
         const eventPayload: OnChainEvent = {
           type: 'Mint',
           to: to.toLowerCase(),
@@ -235,16 +218,6 @@ export class EventListener {
           logIndex: logIndex.toString(16)  // Convert to hex string
         };
         
-        this.logger.info('Mint event payload prepared', {
-          ...eventPayload,
-          hasBlockNumber: typeof eventPayload.blockNumber === 'number',
-          hasTransactionIndex: typeof eventPayload.transactionIndex === 'number',
-          hasLogIndex: typeof logIndex === 'number',
-          blockNumberValue: eventPayload.blockNumber,
-          transactionIndexValue: eventPayload.transactionIndex,
-          logIndexValue: logIndex
-        });
-
         await this.handleEvent(eventPayload);
         
       } catch (error) {
@@ -307,15 +280,6 @@ export class EventListener {
             logIndex: logIndex.toString(16)
           };
           
-          this.logger.info('Processing staking transfer event', {
-            isStaking: toStaking,
-            stakingContract: isStakingContract,
-            from: from.toLowerCase(),
-            to: to.toLowerCase(),
-            tokenId: tokenId.toString(),
-            id: id
-          });
-
           await this.handleEvent(stakingEvent);
           return; // Skip sending the transfer event
         }
@@ -427,43 +391,38 @@ export class EventListener {
       
       // Verify Kinesis credentials before sending
       const credentials = await this.kinesis.config.credentials();
-      this.logger.info('Verifying Kinesis credentials before send', {
-        hasCredentials: !!credentials,
-        accessKeyId: credentials?.accessKeyId ? '[REDACTED]' : undefined,
-        expiration: credentials?.expiration
-      });
       
       // Log the event payload and Kinesis configuration before sending
-      this.logger.info('Preparing to send event to Kinesis', {
-        streamName: this.config.kinesisStreamName,
-        eventPayload: event,
-        eventDetails: {
-          hasBlockNumber: 'blockNumber' in event,
-          blockNumberType: typeof event.blockNumber,
-          blockNumberValue: event.blockNumber,
-          hasTransactionIndex: 'transactionIndex' in event,
-          transactionIndexType: typeof event.transactionIndex,
-          transactionIndexValue: event.transactionIndex
-        },
-        payloadSize: Buffer.from(JSON.stringify(event)).length,
-        kinesisConfig: {
-          region: this.kinesis.config.region,
-          endpoint: this.kinesis.config.endpoint,
-          maxAttempts: this.kinesis.config.maxAttempts,
-          retryMode: this.kinesis.config.retryMode,
-          hasValidCredentials: !!credentials
-        }
-      });
+      // this.logger.info('Preparing to send event to Kinesis', {
+      //   streamName: this.config.kinesisStreamName,
+      //   eventPayload: event,
+      //   eventDetails: {
+      //     hasBlockNumber: 'blockNumber' in event,
+      //     blockNumberType: typeof event.blockNumber,
+      //     blockNumberValue: event.blockNumber,
+      //     hasTransactionIndex: 'transactionIndex' in event,
+      //     transactionIndexType: typeof event.transactionIndex,
+      //     transactionIndexValue: event.transactionIndex
+      //   },
+      //   payloadSize: Buffer.from(JSON.stringify(event)).length,
+      //   kinesisConfig: {
+      //     region: this.kinesis.config.region,
+      //     endpoint: this.kinesis.config.endpoint,
+      //     maxAttempts: this.kinesis.config.maxAttempts,
+      //     retryMode: this.kinesis.config.retryMode,
+      //     hasValidCredentials: !!credentials
+      //   }
+      // });
 
       // Send to Kinesis
-      this.logger.info('Creating PutRecordCommand', {
-        streamName: this.config.kinesisStreamName,
-        eventType: event.type,
-        transactionHash: event.transactionHash,
-        eventId: event.id,
-        idType: typeof event.id,
-        eventData: event
-      });
+      // this.logger.info('Creating PutRecordCommand', {
+      //   streamName: this.config.kinesisStreamName,
+      //   eventType: event.type,
+      //   transactionHash: event.transactionHash,
+      //   eventId: event.id,
+      //   idType: typeof event.id,
+      //   eventData: event
+      // });
 
       const data = Buffer.from(JSON.stringify(event));
       const command = new PutRecordCommand({
