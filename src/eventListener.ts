@@ -496,7 +496,6 @@ export class EventListener {
     } catch (error) {
       this.logger.error('Failed to send event to Kinesis', { 
         error: error instanceof Error ? {
-          name: error.name,
           message: error.message,
           stack: error.stack,
           code: (error as any).code,
@@ -508,19 +507,26 @@ export class EventListener {
           type: event.type,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber
-        },
-        kinesisStream: this.config.kinesisStreamName,
-        kinesisConfig: {
-          region: this.kinesis.config.region,
-          endpoint: this.kinesis.config.endpoint,
-          maxAttempts: this.kinesis.config.maxAttempts,
-          retryMode: this.kinesis.config.retryMode
         }
       });
+      
+      // Update local metrics
       updateMetrics.incrementEvent('errors');
       updateMetrics.updateKinesis({
         errors: metrics.kinesis.errors + 1
       });
+
+      // Publish error metric to CloudWatch
+      await this.metrics.publishMetric({
+        name: 'ErrorCount',
+        value: 1,
+        unit: 'Count',
+        dimensions: {
+          ErrorType: 'KinesisError',
+          Environment: this.config.environment
+        }
+      });
+
       throw error;
     }
   }
