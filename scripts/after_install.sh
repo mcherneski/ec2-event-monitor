@@ -129,14 +129,20 @@ sudo chmod 644 /var/log/event-monitor.log /var/log/event-monitor.error.log
 echo "Testing Node.js application..."
 cd /home/ec2-user/event-monitor
 echo "Running test with full debug output:"
-NODE_ENV=production DEBUG=* NODE_DEBUG=* NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node" \
-  node --experimental-specifier-resolution=node dist/run.js 2>&1 | tee /tmp/node-test.log &
+NODE_ENV=staging DEBUG=* NODE_DEBUG=* NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node" \
+  AWS_REGION=us-east-1 node --experimental-specifier-resolution=node dist/run.js 2>&1 | tee /tmp/node-test.log &
 PID=$!
 sleep 5
 echo "Test run output:"
 cat /tmp/node-test.log
 if ps -p $PID > /dev/null; then
     kill $PID || true
+fi
+
+# Check if test run had errors
+if grep -i "error" /tmp/node-test.log; then
+    echo "Test run encountered errors. Check the logs above."
+    exit 1
 fi
 
 # Reload systemd daemon and start service
