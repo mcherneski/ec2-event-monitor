@@ -6,7 +6,7 @@ phases:
       nodejs: 18
     commands:
       - npm install -g pnpm
-      - pnpm install
+      - pnpm install --no-frozen-lockfile
 
   build:
     commands:
