@@ -51,12 +51,12 @@ sudo chown ec2-user:ec2-user .env
 chmod 644 .env
 
 echo "Fetching environment variables from SSM..."
-# First set NODE_ENV to production
-echo "NODE_ENV=prod" > .env
+# First set NODE_ENV to staging
+echo "NODE_ENV=staging" > .env
 
 # Then fetch all other environment variables from SSM Parameter Store
 aws ssm get-parameters-by-path \
-    --path "/event-monitor/prod" \
+    --path "/ngu-points-system-v2/staging" \
     --with-decryption \
     --region us-east-1 \
     --query "Parameters[*].[Name,Value]" \
@@ -96,7 +96,8 @@ Type=simple
 User=ec2-user
 Group=ec2-user
 WorkingDirectory=/home/ec2-user/event-monitor
-Environment=NODE_ENV=prod
+Environment=NODE_ENV=staging
+Environment=AWS_REGION=us-east-1
 Environment=DEBUG=*
 Environment=NODE_DEBUG=*
 Environment=NODE_OPTIONS=\"--trace-warnings --experimental-specifier-resolution=node\"
