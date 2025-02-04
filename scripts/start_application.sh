@@ -38,7 +38,7 @@ cat /home/ec2-user/event-monitor/dist/run.js
 echo "Testing Node.js application directly:"
 cd /home/ec2-user/event-monitor
 echo "Running with node directly:"
-sudo -u ec2-user NODE_ENV=production DEBUG=* node --trace-warnings dist/run.js 2>&1 | tee /tmp/node-test.log &
+sudo -u ec2-user NODE_ENV=staging DEBUG=* node --trace-warnings dist/run.js 2>&1 | tee /tmp/node-test.log &
 PID=$!
 sleep 5
 echo "Test run output:"
