@@ -6,36 +6,25 @@ phases:
       nodejs: 18
     commands:
       - npm install -g pnpm
-      - pnpm install --no-frozen-lockfile
-  
-  pre_build:
-    commands:
-      - echo "Starting pre-build phase"
-      - aws --version
-  
+      - cd src/ec2-event-monitor
+      - pnpm install
+
   build:
     commands:
-      - echo "Starting build phase"
-      - pnpm run build
-      - ls -la dist/
-      
+      - pnpm build
+      - cp appspec.yml dist/
+      - cp scripts/* dist/scripts/
+      - cp event-monitor.service dist/
+
   post_build:
     commands:
-      - echo "Starting post-build phase"
-      - cp package.json dist/
-      - cp pnpm-lock.yaml dist/
-      - cd dist && pnpm install --prod --no-frozen-lockfile
-      - ls -la
+      - cd dist
+      - zip -r ../event-monitor.zip .
 
 artifacts:
-  base-directory: .
   files:
-    - dist/**/*
-    - scripts/**/*
-    - appspec.yml
-    - package.json
-    - pnpm-lock.yaml
-  discard-paths: false
+    - event-monitor.zip
+  discard-paths: yes
 
 cache:
   paths:

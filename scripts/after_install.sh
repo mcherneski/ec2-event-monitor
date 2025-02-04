@@ -85,9 +85,10 @@ echo "Creating systemd service file..."
 NODE_PATH=$(which node)
 echo "Using Node.js from: $NODE_PATH"
 
-sudo tee /etc/systemd/system/event-listener.service << EOF
+# Create service file with sudo
+sudo bash -c "cat > /etc/systemd/system/event-monitor.service << EOF
 [Unit]
-Description=Blockchain Event Listener
+Description=NGU Event Monitor Service
 After=network.target
 
 [Service]
@@ -98,13 +99,13 @@ WorkingDirectory=/home/ec2-user/event-monitor
 Environment=NODE_ENV=prod
 Environment=DEBUG=*
 Environment=NODE_DEBUG=*
-Environment=NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node"
+Environment=NODE_OPTIONS=\"--trace-warnings --experimental-specifier-resolution=node\"
 EnvironmentFile=-/home/ec2-user/event-monitor/.env
 ExecStart=${NODE_PATH} --experimental-specifier-resolution=node dist/run.js
 Restart=always
 RestartSec=10
-StandardOutput=append:/var/log/event-listener.log
-StandardError=append:/var/log/event-listener.error.log
+StandardOutput=append:/var/log/event-monitor.log
+StandardError=append:/var/log/event-monitor.error.log
 
 # Ensure we have access to enough file descriptors
 LimitNOFILE=65535
@@ -115,38 +116,34 @@ Environment=NODE_PATH=/usr/lib/node_modules
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOF"
 
 # Create log files with proper permissions
 echo "Setting up log files..."
-sudo touch /var/log/event-listener.log /var/log/event-listener.error.log
-sudo chown ec2-user:ec2-user /var/log/event-listener.log /var/log/event-listener.error.log
-sudo chmod 644 /var/log/event-listener.log /var/log/event-listener.error.log
+sudo touch /var/log/event-monitor.log /var/log/event-monitor.error.log
+sudo chown ec2-user:ec2-user /var/log/event-monitor.log /var/log/event-monitor.error.log
+sudo chmod 644 /var/log/event-monitor.log /var/log/event-monitor.error.log
 
 # Test Node.js application
 echo "Testing Node.js application..."
 cd /home/ec2-user/event-monitor
 echo "Running test with full debug output:"
-sudo -u ec2-user NODE_ENV=production DEBUG=* NODE_DEBUG=* NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node" \
+NODE_ENV=production DEBUG=* NODE_DEBUG=* NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node" \
   node --experimental-specifier-resolution=node dist/run.js 2>&1 | tee /tmp/node-test.log &
 PID=$!
 sleep 5
 echo "Test run output:"
 cat /tmp/node-test.log
-kill $PID || true
+if ps -p $PID > /dev/null; then
+    kill $PID || true
+fi
 
-# Reload systemd daemon
+# Reload systemd daemon and start service
 echo "Reloading systemd daemon..."
-sudo systemctl daemon-reload 
-
-# Copy systemd service file
-cp /home/ec2-user/event-monitor/scripts/event-monitor.service /etc/systemd/system/
-
-# Reload systemd and enable service
-systemctl daemon-reload
-systemctl enable event-monitor
-systemctl restart event-monitor
+sudo systemctl daemon-reload
+sudo systemctl enable event-monitor
+sudo systemctl restart event-monitor
 
 # Wait for service to start
 sleep 5
-systemctl status event-monitor 
+sudo systemctl status event-monitor 
