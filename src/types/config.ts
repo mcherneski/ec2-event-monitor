@@ -11,6 +11,7 @@ export interface Config {
   kinesisStreamName: string;
   awsRegion: string;
   environment: string;
+  awsAccountId: string;
 }
 
 async function getSSMParameter(paramName: string): Promise<string> {
@@ -35,45 +36,41 @@ async function getSSMParameter(paramName: string): Promise<string> {
 }
 
 export const getConfig = async (): Promise<Config> => {
-  // If we're in development, use environment variables
-  if (process.env.NODE_ENV === 'development') {
-    return {
-      port: parseInt(process.env.PORT || '3000'),
-      wsRpcUrl: process.env.WS_RPC_URL!,
-      nftContractAddress: process.env.NFT_CONTRACT_ADDRESS!,
-      stakingContractAddress: process.env.STAKING_CONTRACT_ADDRESS!,
-      kinesisStreamName: process.env.KINESIS_STREAM_NAME!,
-      awsRegion: process.env.AWS_REGION!,
-      environment: process.env.NODE_ENV || 'development'
-    };
+  // Validate required environment variables
+  const requiredEnvVars = [
+    'AWS_REGION',
+    'AWS_ACCOUNT_ID',
+    'NODE_ENV'
+  ];
+
+  const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+  if (missingEnvVars.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
   }
-  
-  // In production, fetch from SSM
-  const env = process.env.NODE_ENV || 'dev';
-  logger.info(`Loading configuration for environment: ${env}`);
-  
+
+  const stage = process.env.NODE_ENV || 'development';
+
   try {
-    const [wsRpcUrl, nftAddress, stakingAddress, kinesisStream] = await Promise.all([
-      getSSMParameter(`/event-monitor/${env}/WS_RPC_URL`),
-      getSSMParameter(`/event-monitor/${env}/NFT_CONTRACT_ADDRESS`),
-      getSSMParameter(`/event-monitor/${env}/STAKING_CONTRACT_ADDRESS`),
-      getSSMParameter(`/event-monitor/${env}/KINESIS_STREAM_NAME`)
+    // Fetch SSM parameters
+    const [nftContractAddress, stakingContractAddress, wsRpcUrl, kinesisStreamName] = await Promise.all([
+      getSSMParameter(`/ngu-points-system-v2/${stage}/STAGING_NFT_CONTRACT_ADDRESS`),
+      getSSMParameter(`/ngu-points-system-v2/${stage}/STAGING_STAKING_CONTRACT_ADDRESS`),
+      getSSMParameter(`/ngu-points-system-v2/${stage}/STAGING_WS_RPC_URL`),
+      getSSMParameter(`/ngu-points-system-v2/${stage}/KINESIS_STREAM_NAME`)
     ]);
-    
-    const config = {
-      port: parseInt(process.env.PORT || '3000'),
+
+    return {
+      nftContractAddress,
+      stakingContractAddress,
       wsRpcUrl,
-      nftContractAddress: nftAddress,
-      stakingContractAddress: stakingAddress,
-      kinesisStreamName: kinesisStream,
-      awsRegion: process.env.AWS_REGION || 'us-east-1',
-      environment: env
+      kinesisStreamName: kinesisStreamName || `ngu-points-system-v2-events-${stage}`,
+      awsRegion: process.env.AWS_REGION!,
+      awsAccountId: process.env.AWS_ACCOUNT_ID!,
+      port: parseInt(process.env.PORT || '3000'),
+      environment: stage
     };
-    
-    logger.info('Successfully loaded configuration', config);
-    return config;
   } catch (error) {
-    logger.error('Failed to load configuration', error);
+    logger.error('Failed to fetch SSM parameters', error);
     throw error;
   }
 }; 

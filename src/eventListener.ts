@@ -1,6 +1,6 @@
 import { WebSocketProvider, Contract, EventLog, id, Fragment, EventFragment } from 'ethers';
 import WebSocket from 'ws';
-import { KinesisClient, PutRecordCommand, DescribeStreamCommand } from '@aws-sdk/client-kinesis';
+import { KinesisClient, PutRecordCommand, DescribeStreamCommand, RegisterStreamConsumerCommand, DescribeStreamConsumerCommand, ConsumerStatus } from '@aws-sdk/client-kinesis';
 import type { Config } from './types/config.js';
 import type { OnChainEvent } from './types/events.js';
 import { Logger } from './utils/logger.js';
@@ -34,6 +34,8 @@ export class EventListener {
   private logger: Logger;
   private config: Config;
   private reconnectAttempts: number = 0;
+  private heartbeatInterval?: NodeJS.Timeout;
+  private consumerId?: string;
 
   constructor(config: Config) {
     this.config = config;
@@ -163,6 +165,12 @@ export class EventListener {
         shardCount: streamDescription.StreamDescription?.Shards?.length
       });
 
+      // Register as enhanced fan-out consumer
+      await this.setupEnhancedFanOut();
+
+      // Start heartbeat
+      this.startHeartbeat();
+      
       // Set up event listeners
       await this.setupEventListeners();
       
@@ -551,11 +559,43 @@ export class EventListener {
       this.logger.info('Attempting to reconnect');
       await this.provider.destroy();
       
+      // Calculate backoff time with exponential backoff and jitter
+      const backoffTime = Math.min(
+        1000 * Math.pow(2, this.reconnectAttempts) + Math.random() * 1000,
+        60000 // Max 60 seconds
+      );
+      
+      this.logger.info('Waiting before reconnect attempt', {
+        backoffTime,
+        reconnectAttempts: this.reconnectAttempts
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, backoffTime));
+      
       const wsCreator = () => {
         const ws = new WebSocket(this.config.wsRpcUrl, {
           handshakeTimeout: 5000,
           maxPayload: 100 * 1024 * 1024 // 100MB
         });
+
+        ws.on('pong', () => {
+          // Reset reconnect attempts on successful pong
+          this.reconnectAttempts = 0;
+          updateMetrics.updateWebsocket({
+            connected: true,
+            reconnectAttempts: 0
+          });
+        });
+
+        ws.on('error', (error: WebSocket.ErrorEvent) => {
+          this.logger.error('WebSocket error in reconnection', {
+            error: error instanceof Error ? {
+              message: error.message,
+              stack: error.stack
+            } : error
+          });
+        });
+
         return ws;
       };
       
@@ -565,16 +605,121 @@ export class EventListener {
       });
       
       await this.setupEventListeners();
-      this.logger.info('Successfully reconnected');
+      this.startHeartbeat(); // Restart heartbeat after reconnection
+      
+      this.logger.info('Successfully reconnected', {
+        reconnectAttempts: this.reconnectAttempts
+      });
     } catch (error) {
-      this.logger.error('Failed to reconnect', error);
-      // Implement exponential backoff retry logic here
-      setTimeout(() => this.reconnect(), 5000);
+      this.logger.error('Failed to reconnect', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : error,
+        reconnectAttempts: this.reconnectAttempts
+      });
+      
+      // Schedule next reconnection attempt
+      setTimeout(() => this.reconnect(), 1000);
+    }
+  }
+
+  private startHeartbeat() {
+    // Clear any existing heartbeat
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+
+    // Send heartbeat every 30 seconds
+    this.heartbeatInterval = setInterval(async () => {
+      try {
+        // Check if websocket is still connected
+        const ws = this.provider.websocket as WebSocket;
+        if (ws.readyState !== WebSocket.OPEN) {
+          this.logger.error('WebSocket not open during heartbeat check', {
+            readyState: ws.readyState
+          });
+          await this.reconnect();
+          return;
+        }
+
+        // Send a ping frame
+        ws.ping();
+
+        // Update metrics
+        updateMetrics.updateWebsocket({
+          connected: true,
+          messagesProcessed: metrics.websocket.messagesProcessed + 1
+        });
+      } catch (error) {
+        this.logger.error('Heartbeat check failed', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error
+        });
+        await this.reconnect();
+      }
+    }, 30000); // 30 seconds
+  }
+
+  private async setupEnhancedFanOut() {
+    try {
+      // Generate a unique consumer name for this instance
+      const instanceId = Math.random().toString(36).substring(7);
+      const consumerName = `ngu-event-listener-${process.env.NODE_ENV}-${instanceId}`;
+
+      // Register new consumer
+      const registerCommand = new RegisterStreamConsumerCommand({
+        StreamARN: `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`,
+        ConsumerName: consumerName
+      });
+
+      const registerResponse = await this.kinesis.send(registerCommand);
+      this.consumerId = registerResponse.Consumer?.ConsumerName;
+
+      // Wait for consumer to become active
+      let attempts = 0;
+      while (attempts < 10) {
+        const describeConsumer = new DescribeStreamConsumerCommand({
+          StreamARN: `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`,
+          ConsumerName: this.consumerId
+        });
+
+        const consumerDescription = await this.kinesis.send(describeConsumer);
+        
+        if (consumerDescription.ConsumerDescription?.ConsumerStatus === ConsumerStatus.ACTIVE) {
+          this.logger.info('Enhanced fan-out consumer active', {
+            consumerId: this.consumerId,
+            arn: consumerDescription.ConsumerDescription.ConsumerARN
+          });
+          return;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
+      }
+
+      throw new Error('Timeout waiting for consumer to become active');
+    } catch (error) {
+      this.logger.error('Failed to setup enhanced fan-out consumer', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
+      throw error;
     }
   }
 
   async stop() {
     this.logger.info('Stopping event listener');
+    
+    // Clear heartbeat interval
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+    
     await this.provider.destroy();
     updateMetrics.updateWebsocket({
       connected: false

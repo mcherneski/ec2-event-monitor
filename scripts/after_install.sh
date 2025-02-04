@@ -138,3 +138,15 @@ kill $PID || true
 # Reload systemd daemon
 echo "Reloading systemd daemon..."
 sudo systemctl daemon-reload 
+
+# Copy systemd service file
+cp /home/ec2-user/event-monitor/scripts/event-monitor.service /etc/systemd/system/
+
+# Reload systemd and enable service
+systemctl daemon-reload
+systemctl enable event-monitor
+systemctl restart event-monitor
+
+# Wait for service to start
+sleep 5
+systemctl status event-monitor 

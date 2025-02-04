@@ -1,0 +1,17 @@
+[Unit]
+Description=NGU Event Monitor Service
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/event-monitor
+Environment=NODE_ENV=staging
+Environment=AWS_REGION=us-east-1
+ExecStart=/usr/bin/node dist/run.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 
