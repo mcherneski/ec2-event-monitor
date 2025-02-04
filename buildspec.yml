@@ -6,15 +6,14 @@ phases:
       nodejs: 18
     commands:
       - npm install -g pnpm
-      - cd src/ec2-event-monitor
       - pnpm install
 
   build:
     commands:
       - pnpm build
       - cp appspec.yml dist/
-      - cp scripts/* dist/scripts/
-      - cp event-monitor.service dist/
+      - mkdir -p dist/scripts
+      - cp -r scripts/* dist/scripts/
 
   post_build:
     commands:
