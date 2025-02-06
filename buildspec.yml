@@ -25,6 +25,8 @@ phases:
       # Create application directory structure
       - mkdir -p deployment/scripts
       - cp -r scripts/* deployment/scripts/
+      # Ensure scripts are executable
+      - chmod +x deployment/scripts/*.sh
       - cp -r dist/* deployment/
       # Verify deployment structure
       - echo "Deployment directory structure:"
@@ -35,11 +37,13 @@ phases:
       - cd deployment
       - zip -r ../event-monitor.zip .
       - cd ..
-      # Verify archive contents
+      # Verify archive contents and permissions
       - echo "Archive contents:"
       - unzip -l event-monitor.zip
       - echo "Checking for appspec.yml:"
       - unzip -l event-monitor.zip | grep appspec.yml
+      - echo "Checking script permissions:"
+      - unzip -l event-monitor.zip | grep "\.sh"
 
 artifacts:
   files:
