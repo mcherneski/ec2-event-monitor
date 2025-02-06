@@ -13,7 +13,7 @@ fi
 
 # Print service file contents for debugging
 echo "Service file contents:"
-cat /etc/systemd/system/event-listener.service
+cat /etc/systemd/system/event-monitor.service
 
 # Check if the executable exists
 if [ ! -f "/home/ec2-user/event-monitor/dist/run.js" ]; then
@@ -51,22 +51,22 @@ grep -v "KEY\|SECRET\|PASSWORD" /home/ec2-user/event-monitor/.env || echo "No .e
 
 # Check error log if it exists
 echo "Checking previous error log:"
-if [ -f "/var/log/event-listener.error.log" ]; then
-    tail -n 50 /var/log/event-listener.error.log
+if [ -f "/var/log/event-monitor.error.log" ]; then
+    tail -n 50 /var/log/event-monitor.error.log
 else
     echo "No error log found"
 fi
 
 # Enable and start the service
-systemctl enable event-listener
-systemctl start event-listener
+systemctl enable event-monitor
+systemctl start event-monitor
 
 sleep 5
 
 # Check if service is running
-if ! systemctl is-active --quiet event-listener; then
-    echo "Failed to start event-listener service"
+if ! systemctl is-active --quiet event-monitor; then
+    echo "Failed to start event-monitor service"
     echo "Latest error log:"
-    tail -n 50 /var/log/event-listener.error.log
+    tail -n 50 /var/log/event-monitor.error.log
     exit 1
 fi 
