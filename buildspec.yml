@@ -17,24 +17,27 @@ phases:
   post_build:
     commands:
       - echo "Starting post-build phase..."
-      # Debug current location
-      - pwd
-      - echo "Listing current directory:"
-      - ls -la
-      # Create deployment package directly
-      - zip -r event-monitor.zip appspec.yml scripts/* dist/*
-      # Verify the contents
-      - echo "Verifying archive contents:"
-      - unzip -l event-monitor.zip
-      - echo "Checking for appspec.yml:"
-      - unzip -l event-monitor.zip | grep -i "appspec.yml"
+      - echo "Build completed on `date`"
 
 artifacts:
   files:
-    - event-monitor.zip
-  discard-paths: no
+    - appspec.yml
+    - scripts/**/*
+    - dist/**/*
+    - package.json
+    - pnpm-lock.yaml
+    - tsconfig.json
+  exclude-paths:
+    - node_modules/**/*
+    - .pnpm-store/**/*
+    - .git/**/*
+    - .env*
+    - config/**/*
+    - "*.md"
+  base-directory: '.'
+  discard-paths: false
 
 cache:
   paths:
     - 'node_modules/**/*'
-    - '.pnpm-store/**/*' 
+    - '.pnpm-store/**/*'
