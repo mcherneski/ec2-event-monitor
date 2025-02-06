@@ -5,13 +5,13 @@ phases:
     runtime-versions:
       nodejs: 18
     commands:
-      - npm install -g pnpm
-      - pnpm install --no-frozen-lockfile
+      - echo "Installing dependencies..."
+      - npm ci
 
   build:
     commands:
       - echo "Starting build phase..."
-      - pnpm build
+      - npm run build
       - echo "Build completed"
 
   post_build:
@@ -25,11 +25,10 @@ artifacts:
     - scripts/**/*
     - dist/**/*
     - package.json
-    - pnpm-lock.yaml
+    - package-lock.json
     - tsconfig.json
   exclude-paths:
     - node_modules/**/*
-    - .pnpm-store/**/*
     - .git/**/*
     - .env*
     - config/**/*
@@ -40,4 +39,3 @@ artifacts:
 cache:
   paths:
     - 'node_modules/**/*'
-    - '.pnpm-store/**/*'

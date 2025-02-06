@@ -14,7 +14,7 @@ source /home/ec2-user/.bashrc
 # Install dependencies
 echo "Installing dependencies..."
 rm -rf node_modules
-npm install --production
+npm ci --production
 
 # Ensure proper permissions
 sudo chown -R ec2-user:ec2-user .
@@ -53,8 +53,13 @@ if [ ! -s .env ]; then
     exit 1
 fi
 
+echo "Environment file contents (excluding sensitive data):"
+grep -v "KEY\|SECRET\|PASSWORD\|PRIVATE" .env || true
+
 # Create systemd service file
 NODE_PATH=$(which node)
+echo "Using Node.js from: ${NODE_PATH}"
+
 sudo bash -c "cat > /etc/systemd/system/event-monitor.service << EOF
 [Unit]
 Description=NGU Event Monitor Service
@@ -67,7 +72,8 @@ Group=ec2-user
 WorkingDirectory=/home/ec2-user/event-monitor
 Environment=NODE_ENV=staging
 Environment=AWS_REGION=us-east-1
-EnvironmentFile=-/home/ec2-user/event-monitor/.env
+Environment=NODE_OPTIONS=\"--experimental-specifier-resolution=node\"
+EnvironmentFile=/home/ec2-user/event-monitor/.env
 ExecStart=${NODE_PATH} dist/run.js
 Restart=always
 RestartSec=10
@@ -79,15 +85,34 @@ WantedBy=multi-user.target
 EOF"
 
 # Set up log files
+echo "Setting up log files..."
 sudo touch /var/log/event-monitor.log /var/log/event-monitor.error.log
 sudo chown ec2-user:ec2-user /var/log/event-monitor.log /var/log/event-monitor.error.log
 sudo chmod 644 /var/log/event-monitor.log /var/log/event-monitor.error.log
 
+# Stop the service if it's running
+echo "Stopping existing service..."
+sudo systemctl stop event-monitor || true
+
+# Clear existing logs
+echo "Clearing old logs..."
+sudo truncate -s 0 /var/log/event-monitor.log
+sudo truncate -s 0 /var/log/event-monitor.error.log
+
 # Start the service
+echo "Starting service..."
 sudo systemctl daemon-reload
 sudo systemctl enable event-monitor
 sudo systemctl restart event-monitor
 
 # Wait and check status
 sleep 5
-sudo systemctl status event-monitor 
+echo "Service status:"
+sudo systemctl status event-monitor
+
+# Check logs for errors
+echo "Checking logs for errors..."
+echo "Standard output log:"
+tail -n 50 /var/log/event-monitor.log
+echo "Error log:"
+tail -n 50 /var/log/event-monitor.error.log 

@@ -24,20 +24,19 @@ sudo mkdir -p /home/ec2-user/event-monitor
 sudo chown ec2-user:ec2-user /home/ec2-user/event-monitor
 sudo rm -rf /home/ec2-user/event-monitor/*
 
-# Set up npm and pnpm
+# Set up npm global directory
 sudo mkdir -p /usr/local/lib/node_modules
 sudo chmod 777 /usr/local/lib/node_modules
 
+# Configure npm
 cd /home/ec2-user
 npm config set prefix '/usr/local'
-npm install -g pnpm || curl -fsSL https://get.pnpm.io/install.sh | sh -
-
-# Set up pnpm for ec2-user
-sudo -u ec2-user bash -c 'mkdir -p ~/.local/share/pnpm'
 
 # Update PATH
-echo 'export PNPM_HOME="/home/ec2-user/.local/share/pnpm"' >> /home/ec2-user/.bashrc
-echo 'export PATH="$PNPM_HOME:$PATH"' >> /home/ec2-user/.bashrc
 echo 'export PATH="/usr/local/bin:$PATH"' >> /home/ec2-user/.bashrc
+
+# Verify Node.js and npm installation
+echo "Node.js version: $(node --version)"
+echo "npm version: $(npm --version)"
 
 echo "before_install.sh completed" 
