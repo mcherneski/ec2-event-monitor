@@ -51,8 +51,12 @@ sudo chown ec2-user:ec2-user .env
 chmod 644 .env
 
 echo "Fetching environment variables from SSM..."
-# First set NODE_ENV to staging
-echo "NODE_ENV=staging" > .env
+# First set required environment variables
+cat > .env << EOL
+NODE_ENV=staging
+AWS_REGION=us-east-1
+AWS_SDK_LOAD_CONFIG=1
+EOL
 
 # Then fetch all other environment variables from SSM Parameter Store
 aws ssm get-parameters-by-path \

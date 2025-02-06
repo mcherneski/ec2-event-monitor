@@ -2,24 +2,28 @@ version: 0.0
 os: linux
 
 files:
-  - source: /dist
-    destination: /home/ec2-user/event-monitor/dist
-  - source: /scripts
-    destination: /home/ec2-user/event-monitor/scripts
-  - source: /package.json
-    destination: /home/ec2-user/event-monitor
-  - source: /pnpm-lock.yaml
+  - source: /
     destination: /home/ec2-user/event-monitor
 
 permissions:
   - object: /home/ec2-user/event-monitor
-    pattern: "**"
+    owner: ec2-user
+    group: ec2-user
+    mode: 755
+    type:
+      - directory
+  - object: /home/ec2-user/event-monitor/*
+    owner: ec2-user
+    group: ec2-user
+    mode: 644
+    type:
+      - file
+  - object: /home/ec2-user/event-monitor/scripts/*
     owner: ec2-user
     group: ec2-user
     mode: 755
     type:
       - file
-      - directory
 
 hooks:
   BeforeInstall:
