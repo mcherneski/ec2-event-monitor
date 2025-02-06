@@ -24,7 +24,8 @@ export const metrics = {
     connected: false,
     lastReconnectAttempt: Date.now(),
     reconnectAttempts: 0,
-    messagesProcessed: 0
+    messagesProcessed: 0,
+    circuitBreakerOpen: false
   },
   kinesis: {
     batchesSent: 0,
