@@ -17,33 +17,17 @@ phases:
   post_build:
     commands:
       - echo "Starting post-build phase..."
-      # Create a clean deployment directory
-      - rm -rf deployment
-      - mkdir -p deployment
-      # Copy appspec.yml to root of deployment
-      - cp appspec.yml deployment/
-      # Create application directory structure
-      - mkdir -p deployment/scripts
-      - cp -r scripts/* deployment/scripts/
-      # Ensure scripts are executable
-      - chmod +x deployment/scripts/*.sh
-      - cp -r dist/* deployment/
-      # Verify deployment structure
-      - echo "Deployment directory structure:"
-      - ls -la deployment/
-      - echo "Scripts directory:"
-      - ls -la deployment/scripts/
-      # Create deployment archive
-      - cd deployment
-      - zip -r ../event-monitor.zip .
-      - cd ..
-      # Verify archive contents and permissions
-      - echo "Archive contents:"
+      # Debug current location
+      - pwd
+      - echo "Listing current directory:"
+      - ls -la
+      # Create deployment package directly
+      - zip -r event-monitor.zip appspec.yml scripts/* dist/*
+      # Verify the contents
+      - echo "Verifying archive contents:"
       - unzip -l event-monitor.zip
       - echo "Checking for appspec.yml:"
-      - unzip -l event-monitor.zip | grep appspec.yml
-      - echo "Checking script permissions:"
-      - unzip -l event-monitor.zip | grep "\.sh"
+      - unzip -l event-monitor.zip | grep -i "appspec.yml"
 
 artifacts:
   files:
