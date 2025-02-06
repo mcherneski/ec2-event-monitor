@@ -1,6 +1,8 @@
 [Unit]
 Description=NGU Event Monitor Service
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -10,16 +12,39 @@ WorkingDirectory=/home/ec2-user/event-monitor
 Environment=NODE_ENV=staging
 Environment=AWS_REGION=us-east-1
 Environment=DEBUG=*
-Environment=NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node"
+Environment=NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node --max-old-space-size=2048"
 EnvironmentFile=/home/ec2-user/event-monitor/.env
 ExecStart=/usr/bin/node --experimental-specifier-resolution=node dist/run.js
+
+# Restart configuration
 Restart=always
 RestartSec=10
+StartLimitAction=reboot
+
+# Resource management
+CPUQuota=200%
+MemoryHigh=2G
+MemoryMax=3G
+TasksMax=4096
+
+# File descriptor limits
+LimitNOFILE=65535
+
+# Enable core dumps for debugging
+LimitCORE=infinity
+
+# Logging
 StandardOutput=append:/var/log/event-monitor.log
 StandardError=append:/var/log/event-monitor.error.log
 
-# Ensure we have access to enough file descriptors
-LimitNOFILE=65535
+# Security
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
 
 [Install]
 WantedBy=multi-user.target 

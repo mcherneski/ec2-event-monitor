@@ -51,4 +51,14 @@ export class Logger implements ILogger {
       timestamp: new Date().toISOString()
     }));
   }
+
+  warn(message: string, data?: any) {
+    console.warn(JSON.stringify({
+      level: 'WARN',
+      context: this.context,
+      message,
+      ...(data && { data: this.serializeData(data) }),
+      timestamp: new Date().toISOString()
+    }));
+  }
 } 

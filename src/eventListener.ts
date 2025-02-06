@@ -36,6 +36,12 @@ export class EventListener {
   private reconnectAttempts: number = 0;
   private heartbeatInterval?: NodeJS.Timeout;
   private consumerId?: string;
+  private maxReconnectAttempts: number = 10;
+  private baseReconnectDelay: number = 1000; // 1 second
+  private maxReconnectDelay: number = 300000; // 5 minutes
+  private circuitBreakerTimeout: number = 600000; // 10 minutes
+  private lastCircuitBreakerReset: number = Date.now();
+  private isCircuitBreakerOpen: boolean = false;
 
   constructor(config: Config) {
     this.config = config;
@@ -554,80 +560,134 @@ export class EventListener {
   }
 
   private async reconnect() {
-    this.logger.info('Attempting to reconnect...');
-    updateMetrics.updateWebsocket({
-      connected: false,
-      lastReconnectAttempt: Date.now(),
-      reconnectAttempts: ++this.reconnectAttempts
-    });
-    
-    try {
-      this.logger.info('Attempting to reconnect');
-      await this.provider.destroy();
-      
-      // Calculate backoff time with exponential backoff and jitter
-      const backoffTime = Math.min(
-        1000 * Math.pow(2, this.reconnectAttempts) + Math.random() * 1000,
-        60000 // Max 60 seconds
-      );
-      
-      this.logger.info('Waiting before reconnect attempt', {
-        backoffTime,
-        reconnectAttempts: this.reconnectAttempts
+    if (this.isCircuitBreakerOpen) {
+      if (Date.now() - this.lastCircuitBreakerReset > this.circuitBreakerTimeout) {
+        this.logger.info('Circuit breaker timeout elapsed, resetting circuit breaker');
+        this.isCircuitBreakerOpen = false;
+        this.reconnectAttempts = 0;
+        this.lastCircuitBreakerReset = Date.now();
+      } else {
+        this.logger.warn('Circuit breaker is open, skipping reconnection attempt');
+        return;
+      }
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.logger.error('Max reconnection attempts reached, opening circuit breaker');
+      this.isCircuitBreakerOpen = true;
+      updateMetrics.updateWebsocket({
+        connected: false,
+        lastReconnectAttempt: Date.now(),
+        reconnectAttempts: this.reconnectAttempts,
+        circuitBreakerOpen: true
       });
-      
-      await new Promise(resolve => setTimeout(resolve, backoffTime));
-      
-      const wsCreator = () => {
-        const ws = new WebSocket(this.config.wsRpcUrl, {
-          handshakeTimeout: 5000,
-          maxPayload: 100 * 1024 * 1024 // 100MB
-        });
+      return;
+    }
 
-        ws.on('pong', () => {
-          // Reset reconnect attempts on successful pong
-          this.reconnectAttempts = 0;
-          updateMetrics.updateWebsocket({
-            connected: true,
-            reconnectAttempts: 0
-          });
-        });
+    const delay = Math.min(
+      this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
+      this.maxReconnectDelay
+    );
 
-        ws.on('error', (error: WebSocket.ErrorEvent) => {
-          this.logger.error('WebSocket error in reconnection', {
-            error: error instanceof Error ? {
-              message: error.message,
-              stack: error.stack
-            } : error
-          });
-        });
+    this.logger.info('Attempting to reconnect', {
+      attempt: this.reconnectAttempts + 1,
+      delay,
+      maxAttempts: this.maxReconnectAttempts
+    });
 
-        return ws;
-      };
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    try {
+      // Stop existing listeners and intervals
+      if (this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+      }
       
+      // Create new provider and contracts
+      const wsCreator = this.createWebSocketProvider();
       this.provider = new WebSocketProvider(wsCreator, "base-sepolia", {
         staticNetwork: true,
         batchMaxCount: 1
       });
-      
+
+      this.nftContract = new Contract(this.config.nftContractAddress, EVENT_ABIS, this.provider);
+      this.stakingContract = new Contract(this.config.stakingContractAddress, EVENT_ABIS, this.provider);
+
+      // Reinitialize event listeners
       await this.setupEventListeners();
-      this.startHeartbeat(); // Restart heartbeat after reconnection
-      
-      this.logger.info('Successfully reconnected', {
-        reconnectAttempts: this.reconnectAttempts
+      this.startHeartbeat();
+
+      this.logger.info('Reconnection successful');
+      this.reconnectAttempts = 0;
+      updateMetrics.updateWebsocket({
+        connected: true,
+        lastReconnectAttempt: Date.now(),
+        reconnectAttempts: 0,
+        circuitBreakerOpen: false
       });
     } catch (error) {
-      this.logger.error('Failed to reconnect', {
+      this.reconnectAttempts++;
+      this.logger.error('Reconnection attempt failed', {
         error: error instanceof Error ? {
           message: error.message,
           stack: error.stack
         } : error,
-        reconnectAttempts: this.reconnectAttempts
+        attempt: this.reconnectAttempts,
+        nextDelay: Math.min(
+          this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
+          this.maxReconnectDelay
+        )
       });
       
+      updateMetrics.updateWebsocket({
+        connected: false,
+        lastReconnectAttempt: Date.now(),
+        reconnectAttempts: this.reconnectAttempts,
+        circuitBreakerOpen: false
+      });
+
       // Schedule next reconnection attempt
-      setTimeout(() => this.reconnect(), 1000);
+      setTimeout(() => this.reconnect(), 0);
     }
+  }
+
+  private createWebSocketProvider() {
+    return () => {
+      const ws = new WebSocket(this.config.wsRpcUrl, {
+        handshakeTimeout: 5000,
+        maxPayload: 100 * 1024 * 1024 // 100MB
+      });
+      
+      ws.onopen = () => {
+        this.logger.info('WebSocket connection established successfully');
+        updateMetrics.updateWebsocket({
+          connected: true,
+          lastReconnectAttempt: Date.now(),
+          reconnectAttempts: 0,
+          circuitBreakerOpen: false
+        });
+      };
+      
+      ws.onerror = (error: WebSocket.ErrorEvent) => {
+        this.logger.error('WebSocket connection error', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          reconnectAttempts: this.reconnectAttempts,
+          circuitBreakerOpen: this.isCircuitBreakerOpen
+        });
+        
+        updateMetrics.updateWebsocket({
+          connected: false,
+          lastReconnectAttempt: Date.now(),
+          reconnectAttempts: this.reconnectAttempts,
+          circuitBreakerOpen: this.isCircuitBreakerOpen
+        });
+      };
+      
+      return ws;
+    };
   }
 
   private startHeartbeat() {
