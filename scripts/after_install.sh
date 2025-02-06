@@ -29,9 +29,9 @@ rm -f pnpm-lock.yaml  # Remove existing lock file
 # Ensure proper permissions
 sudo chown -R ec2-user:ec2-user .
 
-# Install dependencies as ec2-user
+# Install dependencies as ec2-user with specific node-linker
 echo "Running pnpm install..."
-pnpm install --prod --no-frozen-lockfile
+pnpm install --prod --no-frozen-lockfile --node-linker=hoisted
 
 echo "Installed packages:"
 ls -la node_modules/.pnpm/
@@ -104,9 +104,9 @@ Environment=NODE_ENV=staging
 Environment=AWS_REGION=us-east-1
 Environment=DEBUG=*
 Environment=NODE_DEBUG=*
-Environment=NODE_OPTIONS=\"--trace-warnings --experimental-specifier-resolution=node\"
+Environment=NODE_OPTIONS=\"--trace-warnings --experimental-specifier-resolution=node --preserve-symlinks --preserve-symlinks-main\"
 EnvironmentFile=-/home/ec2-user/event-monitor/.env
-ExecStart=${NODE_PATH} --experimental-specifier-resolution=node dist/run.js
+ExecStart=${NODE_PATH} --experimental-specifier-resolution=node --preserve-symlinks --preserve-symlinks-main dist/run.js
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/event-monitor.log
@@ -117,7 +117,7 @@ LimitNOFILE=65535
 
 # Ensure proper PATH for Node.js and npm global modules
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/root/.local/share/pnpm:/home/ec2-user/.local/share/pnpm
-Environment=NODE_PATH=/usr/lib/node_modules
+Environment=NODE_PATH=/usr/lib/node_modules:/home/ec2-user/event-monitor/node_modules
 
 [Install]
 WantedBy=multi-user.target
@@ -133,8 +133,15 @@ sudo chmod 644 /var/log/event-monitor.log /var/log/event-monitor.error.log
 echo "Testing Node.js application..."
 cd /home/ec2-user/event-monitor
 echo "Running test with full debug output:"
-NODE_ENV=staging DEBUG=* NODE_DEBUG=* NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node" \
-  AWS_REGION=us-east-1 node --experimental-specifier-resolution=node dist/run.js 2>&1 | tee /tmp/node-test.log &
+NODE_ENV=staging \
+DEBUG=* \
+NODE_DEBUG=* \
+NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node --preserve-symlinks --preserve-symlinks-main" \
+AWS_REGION=us-east-1 \
+node --experimental-specifier-resolution=node \
+     --preserve-symlinks \
+     --preserve-symlinks-main \
+     dist/run.js 2>&1 | tee /tmp/node-test.log &
 PID=$!
 sleep 5
 echo "Test run output:"
