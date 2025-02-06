@@ -31,12 +31,22 @@ sudo chown -R ec2-user:ec2-user .
 
 # Install dependencies as ec2-user with specific node-linker
 echo "Running pnpm install..."
-pnpm install --prod --no-frozen-lockfile --node-linker=hoisted
+export NODE_OPTIONS="--preserve-symlinks --preserve-symlinks-main"
+pnpm install --prod --shamefully-hoist
+
+# Create .npmrc file to ensure proper module resolution
+echo "Creating .npmrc file..."
+cat > .npmrc << EOL
+node-linker=hoisted
+shamefully-hoist=true
+strict-peer-dependencies=false
+EOL
 
 echo "Installed packages:"
-ls -la node_modules/.pnpm/
-echo "Checking for ws package:"
-ls -la node_modules/ws || echo "ws package not found!"
+ls -la node_modules/
+echo "Checking for AWS SDK packages:"
+ls -la node_modules/@aws-sdk/ || echo "@aws-sdk not found!"
+ls -la node_modules/@smithy/ || echo "@smithy not found!"
 
 # Ensure dist directory exists with correct permissions
 mkdir -p dist
@@ -106,7 +116,7 @@ Environment=DEBUG=*
 Environment=NODE_DEBUG=*
 Environment=NODE_OPTIONS=\"--trace-warnings --experimental-specifier-resolution=node --preserve-symlinks --preserve-symlinks-main\"
 EnvironmentFile=-/home/ec2-user/event-monitor/.env
-ExecStart=${NODE_PATH} --experimental-specifier-resolution=node --preserve-symlinks --preserve-symlinks-main dist/run.js
+ExecStart=${NODE_PATH} dist/run.js
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/event-monitor.log
@@ -133,15 +143,12 @@ sudo chmod 644 /var/log/event-monitor.log /var/log/event-monitor.error.log
 echo "Testing Node.js application..."
 cd /home/ec2-user/event-monitor
 echo "Running test with full debug output:"
+export NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node --preserve-symlinks --preserve-symlinks-main"
 NODE_ENV=staging \
 DEBUG=* \
 NODE_DEBUG=* \
-NODE_OPTIONS="--trace-warnings --experimental-specifier-resolution=node --preserve-symlinks --preserve-symlinks-main" \
 AWS_REGION=us-east-1 \
-node --experimental-specifier-resolution=node \
-     --preserve-symlinks \
-     --preserve-symlinks-main \
-     dist/run.js 2>&1 | tee /tmp/node-test.log &
+node dist/run.js 2>&1 | tee /tmp/node-test.log &
 PID=$!
 sleep 5
 echo "Test run output:"
