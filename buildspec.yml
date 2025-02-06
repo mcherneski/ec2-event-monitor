@@ -12,27 +12,34 @@ phases:
     commands:
       - echo "Starting build phase..."
       - pnpm build
-      - echo "Build completed, setting up deployment structure..."
-      - mkdir -p dist/scripts
-      - cp -r scripts/* dist/scripts/
-      - echo "Copied scripts to dist/scripts/"
+      - echo "Build completed"
 
   post_build:
     commands:
       - echo "Starting post-build phase..."
-      - pwd
-      - ls -la
-      # Create the deployment package
-      - echo "Creating deployment package..."
-      # First, create the zip file with appspec.yml at the root
-      - zip -r event-monitor.zip appspec.yml
-      # Then add the rest of the files
-      - cd dist
+      # Create a clean deployment directory
+      - rm -rf deployment
+      - mkdir -p deployment
+      # Copy appspec.yml to root of deployment
+      - cp appspec.yml deployment/
+      # Create application directory structure
+      - mkdir -p deployment/scripts
+      - cp -r scripts/* deployment/scripts/
+      - cp -r dist/* deployment/
+      # Verify deployment structure
+      - echo "Deployment directory structure:"
+      - ls -la deployment/
+      - echo "Scripts directory:"
+      - ls -la deployment/scripts/
+      # Create deployment archive
+      - cd deployment
       - zip -r ../event-monitor.zip .
       - cd ..
-      - echo "Created deployment archive"
-      - echo "Verifying archive contents:"
+      # Verify archive contents
+      - echo "Archive contents:"
       - unzip -l event-monitor.zip
+      - echo "Checking for appspec.yml:"
+      - unzip -l event-monitor.zip | grep appspec.yml
 
 artifacts:
   files:
