@@ -11,13 +11,16 @@ phases:
   build:
     commands:
       - pnpm build
-      - cp appspec.yml dist/
       - mkdir -p dist/scripts
       - cp -r scripts/* dist/scripts/
 
   post_build:
     commands:
-      - cd dist
+      # Create a temporary directory for packaging
+      - mkdir -p deployment
+      - cp appspec.yml deployment/
+      - cp -r dist/* deployment/
+      - cd deployment
       - zip -r ../event-monitor.zip .
 
 artifacts:
