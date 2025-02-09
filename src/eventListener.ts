@@ -407,36 +407,36 @@ export class EventListener {
       const credentials = await this.kinesis.config.credentials();
       
       // Log the event payload and Kinesis configuration before sending
-      // this.logger.info('Preparing to send event to Kinesis', {
-      //   streamName: this.config.kinesisStreamName,
-      //   eventPayload: event,
-      //   eventDetails: {
-      //     hasBlockNumber: 'blockNumber' in event,
-      //     blockNumberType: typeof event.blockNumber,
-      //     blockNumberValue: event.blockNumber,
-      //     hasTransactionIndex: 'transactionIndex' in event,
-      //     transactionIndexType: typeof event.transactionIndex,
-      //     transactionIndexValue: event.transactionIndex
-      //   },
-      //   payloadSize: Buffer.from(JSON.stringify(event)).length,
-      //   kinesisConfig: {
-      //     region: this.kinesis.config.region,
-      //     endpoint: this.kinesis.config.endpoint,
-      //     maxAttempts: this.kinesis.config.maxAttempts,
-      //     retryMode: this.kinesis.config.retryMode,
-      //     hasValidCredentials: !!credentials
-      //   }
-      // });
+      this.logger.info('Preparing to send event to Kinesis', {
+        streamName: this.config.kinesisStreamName,
+        eventPayload: event,
+        eventDetails: {
+          hasBlockNumber: 'blockNumber' in event,
+          blockNumberType: typeof event.blockNumber,
+          blockNumberValue: event.blockNumber,
+          hasTransactionIndex: 'transactionIndex' in event,
+          transactionIndexType: typeof event.transactionIndex,
+          transactionIndexValue: event.transactionIndex
+        },
+        payloadSize: Buffer.from(JSON.stringify(event)).length,
+        kinesisConfig: {
+          region: this.kinesis.config.region,
+          endpoint: this.kinesis.config.endpoint,
+          maxAttempts: this.kinesis.config.maxAttempts,
+          retryMode: this.kinesis.config.retryMode,
+          hasValidCredentials: !!credentials
+        }
+      });
 
       // Send to Kinesis
-      // this.logger.info('Creating PutRecordCommand', {
-      //   streamName: this.config.kinesisStreamName,
-      //   eventType: event.type,
-      //   transactionHash: event.transactionHash,
-      //   eventId: event.id,
-      //   idType: typeof event.id,
-      //   eventData: event
-      // });
+      this.logger.info('Creating PutRecordCommand', {
+        streamName: this.config.kinesisStreamName,
+        eventType: event.type,
+        transactionHash: event.transactionHash,
+        eventId: event.id,
+        idType: typeof event.id,
+        eventData: event
+      });
 
       const data = Buffer.from(JSON.stringify(event));
       const command = new PutRecordCommand({
@@ -497,7 +497,10 @@ export class EventListener {
         transactionHash: event.transactionHash,
         shardId: result.ShardId,
         sequenceNumber: result.SequenceNumber,
-        timestamp: Date.now()
+        partitionKey: command.input.PartitionKey,
+        dataSize: data.length,
+        timestamp: Date.now(),
+        eventData: event
       });
     } catch (error) {
       this.logger.error('Failed to send event to Kinesis', { 
