@@ -1,6 +1,6 @@
 import { WebSocketProvider, Contract, EventLog, id, Fragment, EventFragment } from 'ethers';
 import WebSocket from 'ws';
-import { KinesisClient, PutRecordCommand, DescribeStreamCommand, RegisterStreamConsumerCommand, DescribeStreamConsumerCommand, ConsumerStatus } from '@aws-sdk/client-kinesis';
+import { KinesisClient, PutRecordCommand, DescribeStreamCommand, RegisterStreamConsumerCommand, DescribeStreamConsumerCommand, ConsumerStatus, ListStreamConsumersCommand, DeregisterStreamConsumerCommand } from '@aws-sdk/client-kinesis';
 import type { Config } from './types/config.js';
 import type { OnChainEvent } from './types/events.js';
 import { Logger } from './utils/logger.js';
@@ -734,13 +734,64 @@ export class EventListener {
 
   private async setupEnhancedFanOut() {
     try {
+      const streamARN = `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`;
+      
+      // List existing consumers
+      const listConsumersCommand = new ListStreamConsumersCommand({
+        StreamARN: streamARN
+      });
+
+      this.logger.info('Listing existing Kinesis consumers');
+      const existingConsumers = await this.kinesis.send(listConsumersCommand);
+      
+      // Log existing consumers
+      this.logger.info('Found existing consumers', {
+        count: existingConsumers.Consumers?.length || 0,
+        consumers: existingConsumers.Consumers?.map(c => ({
+          name: c.ConsumerName,
+          status: c.ConsumerStatus,
+          creationTime: c.ConsumerCreationTimestamp
+        }))
+      });
+
+      // Clean up old consumers (older than 1 hour)
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const oldConsumers = existingConsumers.Consumers?.filter(c => 
+        c.ConsumerCreationTimestamp && c.ConsumerCreationTimestamp < oneHourAgo
+      ) || [];
+
+      if (oldConsumers.length > 0) {
+        this.logger.info('Cleaning up old consumers', {
+          count: oldConsumers.length,
+          consumers: oldConsumers.map(c => c.ConsumerName)
+        });
+
+        for (const consumer of oldConsumers) {
+          try {
+            const deregisterCommand = new DeregisterStreamConsumerCommand({
+              StreamARN: streamARN,
+              ConsumerName: consumer.ConsumerName
+            });
+            await this.kinesis.send(deregisterCommand);
+            this.logger.info('Successfully deregistered consumer', {
+              consumerName: consumer.ConsumerName
+            });
+          } catch (error) {
+            this.logger.error('Failed to deregister consumer', {
+              consumerName: consumer.ConsumerName,
+              error: error instanceof Error ? error.message : error
+            });
+          }
+        }
+      }
+
       // Generate a unique consumer name for this instance
       const instanceId = Math.random().toString(36).substring(7);
       const consumerName = `ngu-event-listener-${process.env.NODE_ENV}-${instanceId}`;
 
       // Register new consumer
       const registerCommand = new RegisterStreamConsumerCommand({
-        StreamARN: `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`,
+        StreamARN: streamARN,
         ConsumerName: consumerName
       });
 
@@ -751,7 +802,7 @@ export class EventListener {
       let attempts = 0;
       while (attempts < 10) {
         const describeConsumer = new DescribeStreamConsumerCommand({
-          StreamARN: `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`,
+          StreamARN: streamARN,
           ConsumerName: this.consumerId
         });
 
@@ -781,8 +832,33 @@ export class EventListener {
     }
   }
 
+  // Add cleanup method for consumer on shutdown
+  private async cleanupConsumer() {
+    if (this.consumerId) {
+      try {
+        const streamARN = `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`;
+        const deregisterCommand = new DeregisterStreamConsumerCommand({
+          StreamARN: streamARN,
+          ConsumerName: this.consumerId
+        });
+        await this.kinesis.send(deregisterCommand);
+        this.logger.info('Successfully deregistered consumer on shutdown', {
+          consumerId: this.consumerId
+        });
+      } catch (error) {
+        this.logger.error('Failed to deregister consumer on shutdown', {
+          consumerId: this.consumerId,
+          error: error instanceof Error ? error.message : error
+        });
+      }
+    }
+  }
+
   async stop() {
     this.logger.info('Stopping event listener');
+    
+    // Clean up consumer before stopping
+    await this.cleanupConsumer();
     
     // Clear heartbeat interval
     if (this.heartbeatInterval) {
