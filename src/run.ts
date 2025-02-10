@@ -135,7 +135,18 @@ const start = async () => {
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
   } catch (error) {
-    logger.error('Failed to start application', error);
+    logger.error('Failed to start application', {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : error,
+      config: {
+        NODE_ENV: process.env.NODE_ENV,
+        AWS_REGION: process.env.AWS_REGION,
+        AWS_ACCOUNT_ID: process.env.AWS_ACCOUNT_ID
+      }
+    });
     process.exit(1);
   }
 };

@@ -52,14 +52,22 @@ export const getConfig = async (): Promise<Config> => {
 
   try {
     // Fetch SSM parameters
-    const [nftContractAddress, stakingContractAddress, wsRpcUrl, kinesisStreamName] = await Promise.all([
-      getSSMParameter(`/ngu-points-system-v2/${stage}/STAGING_NFT_CONTRACT_ADDRESS`),
-      getSSMParameter(`/ngu-points-system-v2/${stage}/STAGING_STAKING_CONTRACT_ADDRESS`),
-      getSSMParameter(`/ngu-points-system-v2/${stage}/STAGING_WS_RPC_URL`),
-      getSSMParameter(`/ngu-points-system-v2/${stage}/KINESIS_STREAM_NAME`)
-    ]);
+    logger.info('Starting to fetch SSM parameters', { stage });
+    
+    const parameterPaths = [
+      `/ngu-points-system-v2/${stage}/STAGING_NFT_CONTRACT_ADDRESS`,
+      `/ngu-points-system-v2/${stage}/STAGING_STAKING_CONTRACT_ADDRESS`,
+      `/ngu-points-system-v2/${stage}/STAGING_WS_RPC_URL`,
+      `/ngu-points-system-v2/${stage}/KINESIS_STREAM_NAME`
+    ];
 
-    return {
+    logger.info('Fetching parameters', { paths: parameterPaths });
+
+    const [nftContractAddress, stakingContractAddress, wsRpcUrl, kinesisStreamName] = await Promise.all(
+      parameterPaths.map(path => getSSMParameter(path))
+    );
+
+    const config = {
       nftContractAddress,
       stakingContractAddress,
       wsRpcUrl,
@@ -69,8 +77,23 @@ export const getConfig = async (): Promise<Config> => {
       port: parseInt(process.env.PORT || '3000'),
       environment: stage
     };
+
+    logger.info('Config loaded successfully', { config });
+    return config;
   } catch (error) {
-    logger.error('Failed to fetch SSM parameters', error);
+    logger.error('Failed to fetch SSM parameters', {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : error,
+      stage,
+      environment: {
+        AWS_REGION: process.env.AWS_REGION,
+        NODE_ENV: process.env.NODE_ENV,
+        AWS_ACCOUNT_ID: process.env.AWS_ACCOUNT_ID
+      }
+    });
     throw error;
   }
 }; 
