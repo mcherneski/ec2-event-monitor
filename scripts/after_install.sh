@@ -28,7 +28,7 @@ chmod 644 .env
 
 # Set up basic environment variables
 cat > .env << EOL
-NODE_ENV=staging
+NODE_ENV=${NODE_ENV:-staging}
 AWS_REGION=us-east-1
 AWS_SDK_LOAD_CONFIG=1
 EOL
@@ -36,7 +36,7 @@ EOL
 # Fetch environment variables from SSM
 echo "Fetching environment variables from SSM..."
 aws ssm get-parameters-by-path \
-    --path "/ngu-points-system-v2/staging" \
+    --path "/ngu-points-system-v2/${NODE_ENV:-staging}" \
     --with-decryption \
     --region us-east-1 \
     --query "Parameters[*].[Name,Value]" \
