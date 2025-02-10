@@ -39,6 +39,22 @@ aws ssm get-parameters-by-path \
     --path "/ngu-points-system-v2/${NODE_ENV:-staging}" \
     --with-decryption \
     --region us-east-1 \
+    --recursive \
+    --query "Parameters[*].[Name,Value]" \
+    --output text | while read -r name value; do
+    param_name=$(echo "$name" | rev | cut -d'/' -f1 | rev)
+    if [ "$param_name" != "NODE_ENV" ]; then
+        echo "$param_name=$value" >> .env
+    fi
+done
+
+# Also try to fetch any STAGING_ prefixed parameters
+echo "Fetching STAGING_ prefixed parameters..."
+aws ssm get-parameters-by-path \
+    --path "/ngu-points-system-v2/${NODE_ENV:-staging}/STAGING_" \
+    --with-decryption \
+    --region us-east-1 \
+    --recursive \
     --query "Parameters[*].[Name,Value]" \
     --output text | while read -r name value; do
     param_name=$(echo "$name" | rev | cut -d'/' -f1 | rev)
