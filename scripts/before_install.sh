@@ -24,6 +24,11 @@ sudo mkdir -p /home/ec2-user/event-monitor
 sudo chown ec2-user:ec2-user /home/ec2-user/event-monitor
 sudo rm -rf /home/ec2-user/event-monitor/*
 
+# Create and set permissions for log directory
+sudo mkdir -p /var/log/event-listener
+sudo chown -R ec2-user:ec2-user /var/log/event-listener
+sudo chmod 755 /var/log/event-listener
+
 # Set up npm global directory
 sudo mkdir -p /usr/local/lib/node_modules
 sudo chmod 777 /usr/local/lib/node_modules
