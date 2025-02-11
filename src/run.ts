@@ -67,7 +67,10 @@ setInterval(() => {
 // Test WebSocket connectivity
 async function testWebSocketConnection(wsUrl: string): Promise<boolean> {
   return new Promise((resolve) => {
-    logger.info('Testing WebSocket connection...', { url: wsUrl });
+    logger.info('🔄 WEBSOCKET TEST: Starting connection test...', { 
+      url: wsUrl,
+      timestamp: new Date().toISOString()
+    });
     
     const ws = new WebSocket(wsUrl, {
       handshakeTimeout: 5000,
@@ -75,13 +78,19 @@ async function testWebSocketConnection(wsUrl: string): Promise<boolean> {
     });
 
     const timeout = setTimeout(() => {
-      logger.error('WebSocket connection test timed out');
+      logger.error('❌ WEBSOCKET TEST: Connection test timed out', {
+        url: wsUrl,
+        timestamp: new Date().toISOString()
+      });
       ws.terminate();
       resolve(false);
     }, 10000);
 
     ws.on('open', () => {
-      logger.info('WebSocket test connection successful');
+      logger.info('✅ WEBSOCKET TEST: Connection established', {
+        url: wsUrl,
+        timestamp: new Date().toISOString()
+      });
       clearTimeout(timeout);
       
       // Try to subscribe to newHeads to verify full connectivity
@@ -92,12 +101,18 @@ async function testWebSocketConnection(wsUrl: string): Promise<boolean> {
         params: ['newHeads']
       });
       
+      logger.info('🔄 WEBSOCKET TEST: Sending subscription request', {
+        message: subscribeMsg,
+        timestamp: new Date().toISOString()
+      });
+      
       ws.send(subscribeMsg);
     });
 
     ws.on('message', (data) => {
-      logger.info('Received message from WebSocket', {
-        data: data.toString()
+      logger.info('✅ WEBSOCKET TEST: Received subscription response', {
+        data: data.toString(),
+        timestamp: new Date().toISOString()
       });
       clearTimeout(timeout);
       ws.close();
@@ -105,14 +120,23 @@ async function testWebSocketConnection(wsUrl: string): Promise<boolean> {
     });
 
     ws.on('error', (error) => {
-      logger.error('WebSocket test connection error', {
+      logger.error('❌ WEBSOCKET TEST: Connection error', {
         error: error instanceof Error ? {
           message: error.message,
-          stack: error.stack
-        } : error
+          stack: error.stack,
+          name: error.name
+        } : error,
+        url: wsUrl,
+        timestamp: new Date().toISOString()
       });
       clearTimeout(timeout);
       resolve(false);
+    });
+
+    ws.on('close', () => {
+      logger.info('🔄 WEBSOCKET TEST: Connection closed', {
+        timestamp: new Date().toISOString()
+      });
     });
   });
 }
