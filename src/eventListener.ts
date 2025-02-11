@@ -284,6 +284,10 @@ export class EventListener {
 
         // If this is a staking-related transfer, create a synthetic Staked/Unstaked event
         if (toStaking || fromStaking) {
+          const eventType = toStaking ? 'Staked' : 'Unstaked';
+          const staker = toStaking ? from.toLowerCase() : to.toLowerCase();
+          this.logger.info(`Received ${eventType} event`, { tokenId: tokenId.toString(), staker });
+
           const stakingEvent: OnChainEvent = {
             type: toStaking ? 'Staked' as const : 'Unstaked' as const,
             staker: toStaking ? from.toLowerCase() : to.toLowerCase(),
