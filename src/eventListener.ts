@@ -296,17 +296,62 @@ export class EventListener {
         }
       }, 30000);
 
-      this.provider.on('block', (blockNumber) => {
+      this.provider.on('block', async (blockNumber) => {
         if (!blockReceived) {
           blockReceived = true;
           clearTimeout(blockTimeout);
           this.logger.info('✅ WEBSOCKET: First block received', { blockNumber });
         }
-        this.logger.info('📦 WEBSOCKET: New block received', { blockNumber });
-        updateMetrics.updateWebsocket({
-          connected: true,
-          messagesProcessed: metrics.websocket.messagesProcessed + 1
-        });
+
+        try {
+          // Get block details
+          const block = await this.provider.getBlock(blockNumber);
+          if (!block) return;
+
+          // Get all events in this block for our contracts
+          const events = await this.nftContract.queryFilter('*' as any, block.number, block.number);
+          
+          // Count events by type
+          const eventCounts = events.reduce((acc: Record<string, number>, event) => {
+            let eventName = 'unknown';
+            
+            // Check if it's an EventLog
+            if ('fragment' in event && event.fragment?.name) {
+              eventName = event.fragment.name;
+            } else if (event.topics?.[0]) {
+              // Try to match the topic signature
+              const matchedEvent = Object.entries(KNOWN_SIGNATURES)
+                .find(([_, sig]) => sig === event.topics[0]);
+              if (matchedEvent) {
+                eventName = matchedEvent[0];
+              }
+            }
+            
+            acc[eventName] = (acc[eventName] || 0) + 1;
+            return acc;
+          }, {});
+
+          this.logger.info('📦 WEBSOCKET: New block received', { 
+            blockNumber,
+            timestamp: block.timestamp,
+            eventsFound: events.length > 0,
+            eventCounts,
+            transactionCount: block.transactions.length
+          });
+
+          updateMetrics.updateWebsocket({
+            connected: true,
+            messagesProcessed: metrics.websocket.messagesProcessed + 1
+          });
+        } catch (error) {
+          this.logger.error('❌ Error processing block events', {
+            blockNumber,
+            error: error instanceof Error ? {
+              message: error.message,
+              stack: error.stack
+            } : error
+          });
+        }
       });
 
     } catch (error) {
@@ -629,10 +674,15 @@ export class EventListener {
       const result = await this.kinesis.send(command);
 
       this.logger.info('✅ KINESIS: Event sent successfully', {
+        eventType: event.type,
+        tokenId: event.tokenId,
         shardId: result.ShardId,
         sequenceNumber: result.SequenceNumber,
-        eventType: event.type,
-        transactionHash: event.transactionHash
+        transactionHash: event.transactionHash,
+        blockNumber: event.blockNumber,
+        timestamp: new Date().toISOString(),
+        streamName: this.config.kinesisStreamName,
+        partitionKey: `${event.type}-${event.id.toString()}`
       });
 
       // Update Kinesis metrics
