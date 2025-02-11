@@ -311,33 +311,41 @@ export class EventListener {
           // Get all events in this block for our contracts
           const events = await this.nftContract.queryFilter('*' as any, block.number, block.number);
           
-          // Count events by type
-          const eventCounts = events.reduce((acc: Record<string, number>, event) => {
-            let eventName = 'unknown';
-            
-            // Check if it's an EventLog
-            if ('fragment' in event && event.fragment?.name) {
-              eventName = event.fragment.name;
-            } else if (event.topics?.[0]) {
-              // Try to match the topic signature
-              const matchedEvent = Object.entries(KNOWN_SIGNATURES)
-                .find(([_, sig]) => sig === event.topics[0]);
-              if (matchedEvent) {
-                eventName = matchedEvent[0];
+          // Only log if we found relevant events
+          if (events.length > 0) {
+            // Count events by type
+            const eventCounts = events.reduce((acc: Record<string, number>, event) => {
+              let eventName = 'unknown';
+              
+              // Check if it's an EventLog
+              if ('fragment' in event && event.fragment?.name) {
+                eventName = event.fragment.name;
+              } else if (event.topics?.[0]) {
+                // Try to match the topic signature
+                const matchedEvent = Object.entries(KNOWN_SIGNATURES)
+                  .find(([_, sig]) => sig === event.topics[0]);
+                if (matchedEvent) {
+                  eventName = matchedEvent[0];
+                }
               }
-            }
-            
-            acc[eventName] = (acc[eventName] || 0) + 1;
-            return acc;
-          }, {});
+              
+              acc[eventName] = (acc[eventName] || 0) + 1;
+              return acc;
+            }, {});
 
-          this.logger.info('📦 WEBSOCKET: New block received', { 
-            blockNumber,
-            timestamp: block.timestamp,
-            eventsFound: events.length > 0,
-            eventCounts,
-            transactionCount: block.transactions.length
-          });
+            // Only log if we found known events
+            const knownEvents = Object.keys(eventCounts).filter(name => name !== 'unknown');
+            if (knownEvents.length > 0) {
+              this.logger.info('📥 WEBSOCKET: Received blockchain events', { 
+                blockNumber,
+                timestamp: block.timestamp,
+                events: knownEvents.map(name => ({
+                  type: name,
+                  count: eventCounts[name]
+                }))
+              });
+            }
+          }
 
           updateMetrics.updateWebsocket({
             connected: true,
