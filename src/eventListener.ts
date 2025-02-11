@@ -204,8 +204,7 @@ export class EventListener {
       const network = await this.provider.getNetwork();
       this.logger.info('✅ WEBSOCKET: Connected to network', {
         chainId: network.chainId,
-        name: network.name,
-        ensAddress: network.ensAddress
+        name: network.name
       });
 
       // Test provider by getting latest block
@@ -238,14 +237,19 @@ export class EventListener {
       for (const eventType of eventTypes) {
         try {
           const filter = this.nftContract.filters[eventType]();
-          const topics = await this.provider.getNetwork().then(() => filter.topics || []);
+          const topics = await this.provider.getNetwork().then(() => {
+            const filterTopics = filter instanceof Object && 'getTopicFilter' in filter 
+              ? filter.getTopicFilter()
+              : [];
+            return filterTopics;
+          });
           
           this.logger.info('🔍 FILTER: Created event filter', {
             eventType,
             topics,
             filterConfig: {
-              address: filter.address,
-              topics: filter.topics
+              contractAddress: this.nftContract.target,
+              topics
             }
           });
 
@@ -255,7 +259,7 @@ export class EventListener {
             eventType,
             recentEventsCount: testEvents.length,
             lastEventBlock: testEvents[testEvents.length - 1]?.blockNumber,
-            hasValidFilter: !!filter.topics
+            hasValidFilter: !!topics.length
           });
         } catch (error) {
           this.logger.error('❌ FILTER: Failed to create or test filter', {
@@ -528,27 +532,39 @@ export class EventListener {
       });
       updateMetrics.updateWebsocket({
         connected: false,
-        errors: (metrics.websocket.errors || 0) + 1
+        messagesProcessed: 0
       });
     });
 
-    this.provider.websocket.on('close', () => {
-      this.logger.warn('⚠️ WEBSOCKET: Connection closed', {
-        timestamp: new Date().toISOString()
-      });
-      updateMetrics.updateWebsocket({
-        connected: false
-      });
+    // Update metrics with error count
+    updateMetrics.updateWebsocket({
+      connected: false,
+      lastReconnectAttempt: Date.now(),
+      reconnectAttempts: this.reconnectAttempts
     });
 
-    this.provider.websocket.on('open', () => {
-      this.logger.info('✅ WEBSOCKET: Connection opened', {
-        timestamp: new Date().toISOString()
+    // Add provider-level error handling
+    if ('websocket' in this.provider && this.provider.websocket instanceof WebSocket) {
+      const ws = this.provider.websocket;
+      
+      ws.addEventListener('close', () => {
+        this.logger.warn('⚠️ WEBSOCKET: Connection closed', {
+          timestamp: new Date().toISOString()
+        });
+        updateMetrics.updateWebsocket({
+          connected: false
+        });
       });
-      updateMetrics.updateWebsocket({
-        connected: true
+
+      ws.addEventListener('open', () => {
+        this.logger.info('✅ WEBSOCKET: Connection opened', {
+          timestamp: new Date().toISOString()
+        });
+        updateMetrics.updateWebsocket({
+          connected: true
+        });
       });
-    });
+    }
 
     // Test event subscription by querying past events
     try {
