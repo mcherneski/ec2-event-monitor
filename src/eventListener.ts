@@ -193,10 +193,127 @@ export class EventListener {
   }
 
   private async setupEventListeners() {
-    this.logger.info('Setting up event listeners', {
+    this.logger.info('🔄 SETUP: Starting event listener setup', {
       nftContractAddress: this.nftContract.target,
-      stakingContractAddress: this.stakingContract.target
+      stakingContractAddress: this.stakingContract.target,
+      wsUrl: this.config.wsRpcUrl
     });
+
+    // Verify provider connection
+    try {
+      const network = await this.provider.getNetwork();
+      this.logger.info('✅ WEBSOCKET: Connected to network', {
+        chainId: network.chainId,
+        name: network.name,
+        ensAddress: network.ensAddress
+      });
+
+      // Test provider by getting latest block
+      const block = await this.provider.getBlock('latest');
+      this.logger.info('✅ WEBSOCKET: Retrieved latest block', {
+        blockNumber: block?.number,
+        timestamp: block?.timestamp,
+        hash: block?.hash
+      });
+    } catch (error) {
+      this.logger.error('❌ WEBSOCKET: Failed to verify provider connection', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
+      throw error;
+    }
+
+    // Verify contract interfaces
+    try {
+      this.logger.info('🔄 SETUP: Verifying contract interfaces', {
+        nftEvents: EVENT_ABIS,
+        nftAddress: this.nftContract.target,
+        stakingAddress: this.stakingContract.target
+      });
+
+      // Create and verify filters for each event type
+      const eventTypes = ['Transfer', 'Mint', 'Burn', 'Staked', 'Unstaked'];
+      for (const eventType of eventTypes) {
+        try {
+          const filter = this.nftContract.filters[eventType]();
+          const topics = await this.provider.getNetwork().then(() => filter.topics || []);
+          
+          this.logger.info('🔍 FILTER: Created event filter', {
+            eventType,
+            topics,
+            filterConfig: {
+              address: filter.address,
+              topics: filter.topics
+            }
+          });
+
+          // Test the filter with a query
+          const testEvents = await this.nftContract.queryFilter(filter, -1000);
+          this.logger.info('✅ FILTER: Tested event filter', {
+            eventType,
+            recentEventsCount: testEvents.length,
+            lastEventBlock: testEvents[testEvents.length - 1]?.blockNumber,
+            hasValidFilter: !!filter.topics
+          });
+        } catch (error) {
+          this.logger.error('❌ FILTER: Failed to create or test filter', {
+            eventType,
+            error: error instanceof Error ? {
+              message: error.message,
+              stack: error.stack
+            } : error
+          });
+        }
+      }
+
+      // Log the events we're listening for with their signatures
+      const nftEvents = this.nftContract.interface.fragments
+        .filter((f): f is EventFragment => f.type === 'event')
+        .map(event => ({
+          name: event.name,
+          signature: event.format(),
+          topics: [id(event.format())],
+          knownSignature: KNOWN_SIGNATURES[event.name as keyof typeof KNOWN_SIGNATURES],
+          signatureMatch: id(event.format()) === KNOWN_SIGNATURES[event.name as keyof typeof KNOWN_SIGNATURES]
+        }));
+
+      this.logger.info('📋 SETUP: Event signatures verification', {
+        events: nftEvents,
+        validSignatures: nftEvents.every(e => e.signatureMatch)
+      });
+
+      // Subscribe to new blocks for heartbeat and verify subscription
+      let blockReceived = false;
+      const blockTimeout = setTimeout(() => {
+        if (!blockReceived) {
+          this.logger.warn('⚠️ WEBSOCKET: No blocks received within 30 seconds of setup');
+        }
+      }, 30000);
+
+      this.provider.on('block', (blockNumber) => {
+        if (!blockReceived) {
+          blockReceived = true;
+          clearTimeout(blockTimeout);
+          this.logger.info('✅ WEBSOCKET: First block received', { blockNumber });
+        }
+        this.logger.info('📦 WEBSOCKET: New block received', { blockNumber });
+        updateMetrics.updateWebsocket({
+          connected: true,
+          messagesProcessed: metrics.websocket.messagesProcessed + 1
+        });
+      });
+
+    } catch (error) {
+      this.logger.error('❌ SETUP: Failed to verify contract interfaces', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
+      throw error;
+    }
 
     // NFT Contract Events
     this.nftContract.on('Mint', async (to, tokenId, id, event) => {
@@ -403,12 +520,58 @@ export class EventListener {
 
     // Add provider-level error handling
     this.provider.on('error', (error) => {
-      this.logger.error('Provider error', { error });
+      this.logger.error('❌ WEBSOCKET: Provider error', { 
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : error 
+      });
+      updateMetrics.updateWebsocket({
+        connected: false,
+        errors: (metrics.websocket.errors || 0) + 1
+      });
     });
 
-    this.logger.info('Event listeners setup complete', {
+    this.provider.websocket.on('close', () => {
+      this.logger.warn('⚠️ WEBSOCKET: Connection closed', {
+        timestamp: new Date().toISOString()
+      });
+      updateMetrics.updateWebsocket({
+        connected: false
+      });
+    });
+
+    this.provider.websocket.on('open', () => {
+      this.logger.info('✅ WEBSOCKET: Connection opened', {
+        timestamp: new Date().toISOString()
+      });
+      updateMetrics.updateWebsocket({
+        connected: true
+      });
+    });
+
+    // Test event subscription by querying past events
+    try {
+      const filter = this.nftContract.filters.Transfer();
+      const pastEvents = await this.nftContract.queryFilter(filter, -10000); // Last 10000 blocks
+      this.logger.info('📋 SETUP: Past events query test', {
+        eventCount: pastEvents.length,
+        oldestBlock: pastEvents[0]?.blockNumber,
+        newestBlock: pastEvents[pastEvents.length - 1]?.blockNumber
+      });
+    } catch (error) {
+      this.logger.error('❌ SETUP: Failed to query past events', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
+    }
+
+    this.logger.info('✅ SETUP: Event listeners setup complete', {
       nftContractAddress: this.nftContract.target,
-      stakingContractAddress: this.stakingContract.target
+      stakingContractAddress: this.stakingContract.target,
+      wsUrl: this.config.wsRpcUrl
     });
   }
 
