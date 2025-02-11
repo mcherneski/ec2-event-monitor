@@ -752,8 +752,9 @@ export class EventListener {
     try {
       const streamARN = `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`;
       
-      // Use consistent consumer name based on environment
-      const consumerName = `ngu-event-listener-${this.config.environment}`;
+      // Generate a random suffix for the consumer name
+      const randomSuffix = Math.random().toString(36).substring(2, 15);
+      const consumerName = `ngu-event-listener-${this.config.environment}-${randomSuffix}`;
       this.consumerId = consumerName;
 
       this.logger.info('Setting up enhanced fan-out consumer', {
@@ -761,53 +762,49 @@ export class EventListener {
         consumerName
       });
 
-      // Check if consumer already exists
-      const describeConsumer = new DescribeStreamConsumerCommand({
-        StreamARN: streamARN,
-        ConsumerName: consumerName
+      // List and cleanup existing consumers
+      const listCommand = new ListStreamConsumersCommand({
+        StreamARN: streamARN
       });
 
-      try {
-        const existingConsumer = await this.kinesis.send(describeConsumer);
-        
-        if (existingConsumer.ConsumerDescription) {
-          const status = existingConsumer.ConsumerDescription.ConsumerStatus;
-          this.logger.info('Found existing consumer', {
-            consumerName,
-            status,
-            arn: existingConsumer.ConsumerDescription.ConsumerARN
+      const existingConsumers = await this.kinesis.send(listCommand);
+      
+      // Delete any existing consumers that match our prefix
+      if (existingConsumers.Consumers && existingConsumers.Consumers.length > 0) {
+        this.logger.info('Found existing consumers', {
+          count: existingConsumers.Consumers.length,
+          consumers: existingConsumers.Consumers.map(c => c.ConsumerName)
+        });
+
+        const prefix = `ngu-event-listener-${this.config.environment}`;
+        const deletePromises = existingConsumers.Consumers
+          .filter(consumer => consumer.ConsumerName?.startsWith(prefix))
+          .map(async consumer => {
+            this.logger.info('Deregistering existing consumer', {
+              consumerName: consumer.ConsumerName
+            });
+            
+            try {
+              const deregisterCommand = new DeregisterStreamConsumerCommand({
+                StreamARN: streamARN,
+                ConsumerName: consumer.ConsumerName
+              });
+              await this.kinesis.send(deregisterCommand);
+              
+              // Wait for deletion to complete
+              await this.waitForConsumerDeletion(streamARN, consumer.ConsumerName!);
+            } catch (error: any) {
+              // Log but don't fail if we can't delete an old consumer
+              this.logger.warn('Failed to deregister existing consumer', {
+                consumerName: consumer.ConsumerName,
+                error: error.message
+              });
+            }
           });
 
-          // If consumer exists and is ACTIVE, we can use it
-          if (status === ConsumerStatus.ACTIVE) {
-            this.logger.info('Using existing active consumer', { 
-              consumerName,
-              arn: existingConsumer.ConsumerDescription.ConsumerARN
-            });
-            return;
-          }
-
-          // If consumer exists but isn't ACTIVE, wait for it to become active
-          if (status === ConsumerStatus.CREATING) {
-            this.logger.info('Waiting for consumer to become active', { consumerName });
-            await this.waitForConsumerStatus(streamARN, consumerName, ConsumerStatus.ACTIVE);
-            return;
-          }
-
-          // If consumer is in any other state (DELETING), wait for it to be gone before creating new one
-          if (status === ConsumerStatus.DELETING) {
-            this.logger.info('Waiting for consumer deletion to complete', { consumerName });
-            await this.waitForConsumerDeletion(streamARN, consumerName);
-          }
-        }
-      } catch (error: any) {
-        // ResourceNotFoundException is expected if consumer doesn't exist
-        if (error.name !== 'ResourceNotFoundException') {
-          throw error;
-        }
+        await Promise.all(deletePromises);
       }
 
-      // At this point, either no consumer exists or it was deleted
       // Register new consumer
       this.logger.info('Registering new consumer', { consumerName });
       const registerCommand = new RegisterStreamConsumerCommand({
