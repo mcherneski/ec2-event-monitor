@@ -200,6 +200,7 @@ export class EventListener {
 
     // NFT Contract Events
     this.nftContract.on('Mint', async (to, tokenId, id, event) => {
+      this.logger.info('Received Mint event', { tokenId: tokenId.toString(), to: to.toLowerCase() });
       try {
         // Wait for transaction receipt to get block info
         const receipt = await event.getTransactionReceipt();
@@ -255,6 +256,7 @@ export class EventListener {
 
     // NFT Contract Transfer Event
     this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
+      this.logger.info('Received Transfer event', { tokenId: tokenId.toString(), from: from.toLowerCase(), to: to.toLowerCase() });
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
@@ -328,6 +330,7 @@ export class EventListener {
 
     // NFT Contract Burn Event
     this.nftContract.on('Burn', async (from, tokenId, id, event) => {
+      this.logger.info('Received Burn event', { tokenId: tokenId.toString(), from: from.toLowerCase() });
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
