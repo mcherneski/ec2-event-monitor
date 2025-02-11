@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { getConfig } from './types/config.js';
 import { EventListener } from './eventListener.js';
 import { Logger } from './utils/logger.js';
+import WebSocket from 'ws';
 
 // Load environment variables
 dotenv.config();
@@ -63,27 +64,115 @@ setInterval(() => {
   metrics.system.rss = memoryUsage.rss;
 }, 10000);
 
+// Test WebSocket connectivity
+async function testWebSocketConnection(wsUrl: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    logger.info('Testing WebSocket connection...', { url: wsUrl });
+    
+    const ws = new WebSocket(wsUrl, {
+      handshakeTimeout: 5000,
+      maxPayload: 100 * 1024 * 1024
+    });
+
+    const timeout = setTimeout(() => {
+      logger.error('WebSocket connection test timed out');
+      ws.terminate();
+      resolve(false);
+    }, 10000);
+
+    ws.on('open', () => {
+      logger.info('WebSocket test connection successful');
+      clearTimeout(timeout);
+      
+      // Try to subscribe to newHeads to verify full connectivity
+      const subscribeMsg = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_subscribe',
+        params: ['newHeads']
+      });
+      
+      ws.send(subscribeMsg);
+    });
+
+    ws.on('message', (data) => {
+      logger.info('Received message from WebSocket', {
+        data: data.toString()
+      });
+      clearTimeout(timeout);
+      ws.close();
+      resolve(true);
+    });
+
+    ws.on('error', (error) => {
+      logger.error('WebSocket test connection error', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : error
+      });
+      clearTimeout(timeout);
+      resolve(false);
+    });
+  });
+}
+
 // Start the server and event listener
 const start = async () => {
   try {
     const config = await getConfig();
+    logger.info('Configuration loaded', {
+      port: config.port,
+      environment: config.environment,
+      nftContractAddress: config.nftContractAddress,
+      stakingContractAddress: config.stakingContractAddress
+    });
+
+    // Test WebSocket connection before proceeding
+    const wsConnected = await testWebSocketConnection(config.wsRpcUrl);
+    if (!wsConnected) {
+      throw new Error('Failed to establish WebSocket connection during startup test');
+    }
     
     // Create Express app with WebSocket support
     const app = express();
     expressWs(app);
 
     // Create event listener instance
+    logger.info('Initializing event listener...');
     const eventListener = new EventListener(config);
 
     // Health check endpoint
     app.get('/health', (_req: Request, res: Response) => {
-      res.json({ status: 'healthy' });
+      const wsStatus = metrics.websocket.connected;
+      const lastEventAge = Date.now() - metrics.events.lastEventTime;
+      
+      logger.info('Health check requested', {
+        wsConnected: wsStatus,
+        lastEventAge,
+        uptime: Date.now() - metrics.system.startTime
+      });
+      
+      res.json({ 
+        status: wsStatus ? 'healthy' : 'degraded',
+        websocket: {
+          connected: wsStatus,
+          lastEventAge
+        }
+      });
     });
 
     // Readiness check endpoint
     app.get('/ready', (_req: Request, res: Response) => {
       const isReady = metrics.websocket.connected && 
-        (Date.now() - metrics.kinesis.lastBatchTime < 60000); // Last batch within 1 minute
+        (Date.now() - metrics.kinesis.lastBatchTime < 60000);
+      
+      logger.info('Readiness check requested', {
+        ready: isReady,
+        wsConnected: metrics.websocket.connected,
+        lastBatchAge: Date.now() - metrics.kinesis.lastBatchTime
+      });
+      
       res.json({ 
         status: isReady ? 'ready' : 'not_ready',
         websocketConnected: metrics.websocket.connected,
@@ -93,7 +182,7 @@ const start = async () => {
 
     // Metrics endpoint
     app.get('/metrics', (_req: Request, res: Response) => {
-      res.json({
+      const currentMetrics = {
         events: {
           ...metrics.events,
           eventsPerMinute: metrics.events.total / (metrics.system.heapTotal / 1024 / 1024 / 60)
@@ -113,10 +202,14 @@ const start = async () => {
           memoryUsageMB: metrics.system.rss / 1024 / 1024,
           uptimeHours: metrics.system.heapTotal / 3600
         }
-      });
+      };
+      
+      logger.info('Metrics requested', currentMetrics);
+      res.json(currentMetrics);
     });
 
     // Start the event listener
+    logger.info('Starting event listener...');
     await eventListener.start();
     logger.info('Event listener started successfully');
 
