@@ -752,76 +752,64 @@ export class EventListener {
     try {
       const streamARN = `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`;
       
-      // List existing consumers
-      const listConsumersCommand = new ListStreamConsumersCommand({
-        StreamARN: streamARN
+      // Use consistent consumer name based on environment
+      const consumerName = `ngu-event-listener-${this.config.environment}`;
+      this.consumerId = consumerName;
+
+      // Check if consumer already exists
+      const describeConsumer = new DescribeStreamConsumerCommand({
+        StreamARN: streamARN,
+        ConsumerName: consumerName
       });
 
-      this.logger.info('Listing existing Kinesis consumers');
-      const existingConsumers = await this.kinesis.send(listConsumersCommand);
-      
-      // Log existing consumers
-      this.logger.info('Found existing consumers', {
-        count: existingConsumers.Consumers?.length || 0,
-        consumers: existingConsumers.Consumers?.map(c => ({
-          name: c.ConsumerName,
-          status: c.ConsumerStatus,
-          creationTime: c.ConsumerCreationTimestamp
-        }))
-      });
+      try {
+        const existingConsumer = await this.kinesis.send(describeConsumer);
+        
+        if (existingConsumer.ConsumerDescription) {
+          this.logger.info('Found existing consumer', {
+            consumerName,
+            status: existingConsumer.ConsumerDescription.ConsumerStatus
+          });
 
-      // Clean up old consumers (older than 1 hour)
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-      const oldConsumers = existingConsumers.Consumers?.filter(c => 
-        c.ConsumerCreationTimestamp && c.ConsumerCreationTimestamp < oneHourAgo
-      ) || [];
-
-      if (oldConsumers.length > 0) {
-        this.logger.info('Cleaning up old consumers', {
-          count: oldConsumers.length,
-          consumers: oldConsumers.map(c => c.ConsumerName)
-        });
-
-        for (const consumer of oldConsumers) {
-          try {
+          // If consumer exists but isn't ACTIVE, deregister it
+          if (existingConsumer.ConsumerDescription.ConsumerStatus !== ConsumerStatus.ACTIVE) {
+            this.logger.info('Deregistering inactive consumer', { consumerName });
             const deregisterCommand = new DeregisterStreamConsumerCommand({
               StreamARN: streamARN,
-              ConsumerName: consumer.ConsumerName
+              ConsumerName: consumerName
             });
             await this.kinesis.send(deregisterCommand);
-            this.logger.info('Successfully deregistered consumer', {
-              consumerName: consumer.ConsumerName
-            });
-          } catch (error) {
-            this.logger.error('Failed to deregister consumer', {
-              consumerName: consumer.ConsumerName,
-              error: error instanceof Error ? error.message : error
-            });
+
+            // Wait for deregistration to complete
+            await this.waitForConsumerDeletion(streamARN, consumerName);
+          } else {
+            // Consumer exists and is active, we can reuse it
+            this.logger.info('Reusing existing active consumer', { consumerName });
+            return;
           }
+        }
+      } catch (error: any) {
+        // ResourceNotFoundException is expected if consumer doesn't exist
+        if (error.name !== 'ResourceNotFoundException') {
+          throw error;
         }
       }
 
-      // Generate a unique consumer name for this instance
-      const instanceId = Math.random().toString(36).substring(7);
-      const consumerName = `ngu-event-listener-${process.env.NODE_ENV}-${instanceId}`;
-
       // Register new consumer
+      this.logger.info('Registering new consumer', { consumerName });
       const registerCommand = new RegisterStreamConsumerCommand({
         StreamARN: streamARN,
         ConsumerName: consumerName
       });
 
       const registerResponse = await this.kinesis.send(registerCommand);
-      this.consumerId = registerResponse.Consumer?.ConsumerName;
-
+      
       // Wait for consumer to become active
       let attempts = 0;
-      while (attempts < 10) {
-        const describeConsumer = new DescribeStreamConsumerCommand({
-          StreamARN: streamARN,
-          ConsumerName: this.consumerId
-        });
+      const maxAttempts = 10;
+      const waitTime = 1000; // 1 second between attempts
 
+      while (attempts < maxAttempts) {
         const consumerDescription = await this.kinesis.send(describeConsumer);
         
         if (consumerDescription.ConsumerDescription?.ConsumerStatus === ConsumerStatus.ACTIVE) {
@@ -832,7 +820,12 @@ export class EventListener {
           return;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        this.logger.info('Waiting for consumer to become active', {
+          attempt: attempts + 1,
+          status: consumerDescription.ConsumerDescription?.ConsumerStatus
+        });
+
+        await new Promise(resolve => setTimeout(resolve, waitTime));
         attempts++;
       }
 
@@ -846,6 +839,37 @@ export class EventListener {
       });
       throw error;
     }
+  }
+
+  // Helper method to wait for consumer deletion
+  private async waitForConsumerDeletion(streamARN: string, consumerName: string) {
+    let attempts = 0;
+    const maxAttempts = 10;
+    const waitTime = 1000; // 1 second between attempts
+
+    while (attempts < maxAttempts) {
+      try {
+        const describeConsumer = new DescribeStreamConsumerCommand({
+          StreamARN: streamARN,
+          ConsumerName: consumerName
+        });
+        await this.kinesis.send(describeConsumer);
+        
+        // If we get here, consumer still exists
+        this.logger.info('Waiting for consumer deletion', { attempt: attempts + 1 });
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        attempts++;
+      } catch (error: any) {
+        // ResourceNotFoundException means consumer is deleted
+        if (error.name === 'ResourceNotFoundException') {
+          this.logger.info('Consumer successfully deleted');
+          return;
+        }
+        throw error;
+      }
+    }
+
+    throw new Error('Timeout waiting for consumer deletion');
   }
 
   // Add cleanup method for consumer on shutdown
