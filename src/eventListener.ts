@@ -756,6 +756,11 @@ export class EventListener {
       const consumerName = `ngu-event-listener-${this.config.environment}`;
       this.consumerId = consumerName;
 
+      this.logger.info('Setting up enhanced fan-out consumer', {
+        streamName: this.config.kinesisStreamName,
+        consumerName
+      });
+
       // Check if consumer already exists
       const describeConsumer = new DescribeStreamConsumerCommand({
         StreamARN: streamARN,
@@ -766,26 +771,33 @@ export class EventListener {
         const existingConsumer = await this.kinesis.send(describeConsumer);
         
         if (existingConsumer.ConsumerDescription) {
+          const status = existingConsumer.ConsumerDescription.ConsumerStatus;
           this.logger.info('Found existing consumer', {
             consumerName,
-            status: existingConsumer.ConsumerDescription.ConsumerStatus
+            status,
+            arn: existingConsumer.ConsumerDescription.ConsumerARN
           });
 
-          // If consumer exists but isn't ACTIVE, deregister it
-          if (existingConsumer.ConsumerDescription.ConsumerStatus !== ConsumerStatus.ACTIVE) {
-            this.logger.info('Deregistering inactive consumer', { consumerName });
-            const deregisterCommand = new DeregisterStreamConsumerCommand({
-              StreamARN: streamARN,
-              ConsumerName: consumerName
+          // If consumer exists and is ACTIVE, we can use it
+          if (status === ConsumerStatus.ACTIVE) {
+            this.logger.info('Using existing active consumer', { 
+              consumerName,
+              arn: existingConsumer.ConsumerDescription.ConsumerARN
             });
-            await this.kinesis.send(deregisterCommand);
-
-            // Wait for deregistration to complete
-            await this.waitForConsumerDeletion(streamARN, consumerName);
-          } else {
-            // Consumer exists and is active, we can reuse it
-            this.logger.info('Reusing existing active consumer', { consumerName });
             return;
+          }
+
+          // If consumer exists but isn't ACTIVE, wait for it to become active
+          if (status === ConsumerStatus.CREATING) {
+            this.logger.info('Waiting for consumer to become active', { consumerName });
+            await this.waitForConsumerStatus(streamARN, consumerName, ConsumerStatus.ACTIVE);
+            return;
+          }
+
+          // If consumer is in any other state (DELETING), wait for it to be gone before creating new one
+          if (status === ConsumerStatus.DELETING) {
+            this.logger.info('Waiting for consumer deletion to complete', { consumerName });
+            await this.waitForConsumerDeletion(streamARN, consumerName);
           }
         }
       } catch (error: any) {
@@ -795,6 +807,7 @@ export class EventListener {
         }
       }
 
+      // At this point, either no consumer exists or it was deleted
       // Register new consumer
       this.logger.info('Registering new consumer', { consumerName });
       const registerCommand = new RegisterStreamConsumerCommand({
@@ -803,33 +816,18 @@ export class EventListener {
       });
 
       const registerResponse = await this.kinesis.send(registerCommand);
+      this.logger.info('Consumer registration initiated', {
+        consumerName,
+        arn: registerResponse.Consumer?.ConsumerARN
+      });
       
-      // Wait for consumer to become active
-      let attempts = 0;
-      const maxAttempts = 10;
-      const waitTime = 1000; // 1 second between attempts
-
-      while (attempts < maxAttempts) {
-        const consumerDescription = await this.kinesis.send(describeConsumer);
-        
-        if (consumerDescription.ConsumerDescription?.ConsumerStatus === ConsumerStatus.ACTIVE) {
-          this.logger.info('Enhanced fan-out consumer active', {
-            consumerId: this.consumerId,
-            arn: consumerDescription.ConsumerDescription.ConsumerARN
-          });
-          return;
-        }
-
-        this.logger.info('Waiting for consumer to become active', {
-          attempt: attempts + 1,
-          status: consumerDescription.ConsumerDescription?.ConsumerStatus
-        });
-
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        attempts++;
-      }
-
-      throw new Error('Timeout waiting for consumer to become active');
+      // Wait for new consumer to become active
+      await this.waitForConsumerStatus(streamARN, consumerName, ConsumerStatus.ACTIVE);
+      
+      this.logger.info('Enhanced fan-out consumer setup complete', {
+        consumerId: this.consumerId,
+        arn: registerResponse.Consumer?.ConsumerARN
+      });
     } catch (error) {
       this.logger.error('Failed to setup enhanced fan-out consumer', {
         error: error instanceof Error ? {
@@ -841,11 +839,11 @@ export class EventListener {
     }
   }
 
-  // Helper method to wait for consumer deletion
-  private async waitForConsumerDeletion(streamARN: string, consumerName: string) {
+  // Helper method to wait for a specific consumer status
+  private async waitForConsumerStatus(streamARN: string, consumerName: string, targetStatus: ConsumerStatus) {
     let attempts = 0;
-    const maxAttempts = 10;
-    const waitTime = 1000; // 1 second between attempts
+    const maxAttempts = 30; // Increased from 10 to allow more time
+    const waitTime = 2000; // 2 seconds between attempts
 
     while (attempts < maxAttempts) {
       try {
@@ -853,23 +851,46 @@ export class EventListener {
           StreamARN: streamARN,
           ConsumerName: consumerName
         });
-        await this.kinesis.send(describeConsumer);
         
-        // If we get here, consumer still exists
-        this.logger.info('Waiting for consumer deletion', { attempt: attempts + 1 });
+        const description = await this.kinesis.send(describeConsumer);
+        const currentStatus = description.ConsumerDescription?.ConsumerStatus;
+        
+        this.logger.info('Checking consumer status', {
+          attempt: attempts + 1,
+          currentStatus,
+          targetStatus,
+          consumerName
+        });
+        
+        if (currentStatus === targetStatus) {
+          this.logger.info('Consumer reached target status', {
+            consumerName,
+            status: targetStatus
+          });
+          return;
+        }
+
         await new Promise(resolve => setTimeout(resolve, waitTime));
         attempts++;
       } catch (error: any) {
-        // ResourceNotFoundException means consumer is deleted
         if (error.name === 'ResourceNotFoundException') {
-          this.logger.info('Consumer successfully deleted');
+          // If we're waiting for ACTIVE status and consumer doesn't exist, that's an error
+          if (targetStatus === ConsumerStatus.ACTIVE) {
+            throw new Error('Consumer not found while waiting for ACTIVE status');
+          }
+          // Otherwise (e.g., waiting for deletion), this is success
           return;
         }
         throw error;
       }
     }
 
-    throw new Error('Timeout waiting for consumer deletion');
+    throw new Error(`Timeout waiting for consumer to reach status ${targetStatus}`);
+  }
+
+  // Helper method to wait for consumer deletion
+  private async waitForConsumerDeletion(streamARN: string, consumerName: string) {
+    return this.waitForConsumerStatus(streamARN, consumerName, ConsumerStatus.DELETING);
   }
 
   // Add cleanup method for consumer on shutdown
