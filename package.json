@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/run.js"
+    "start": "node dist/run.js",
+    "compute-signatures": "node scripts/compute-signatures.js"
   },
   "dependencies": {
     "@aws-sdk/client-cloudwatch": "^3.0.0",

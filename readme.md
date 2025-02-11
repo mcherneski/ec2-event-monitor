@@ -127,3 +127,7 @@ The service implements several error handling strategies:
 - Unit tests: `npm test`
 - Integration tests: `npm run test:integration`
 - E2E tests: `npm run test:e2e` 
+
+### Deployment
+- Set SSM parameters for the new environment
+- update KNOWN_SIGNATURES and/or EVENT_ABIS in @eventListener.ts

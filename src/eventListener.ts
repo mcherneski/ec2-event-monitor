@@ -13,8 +13,8 @@ const EVENT_ABIS = [
   'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
   'event Burn(address indexed from, uint256 indexed tokenId, uint256 id)',
   'event Mint(address indexed to, uint256 indexed tokenId, uint256 id)',
-  'event Staked(address indexed staker, uint256 indexed tokenId, uint256 id)',
-  'event Unstaked(address indexed staker, uint256 indexed tokenId, uint256 id)'
+  'event Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
+  'event Unstaked(address indexed staker, uint256 tokenId, uint256 indexed id)'
 ];
 
 // Known signatures from the contract for validation
@@ -25,6 +25,32 @@ const KNOWN_SIGNATURES = {
   Staked: '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
   Unstaked: '0x7fc4727e062e336010f2c282598ef5f14facb3de68cf8195c2f23e1454b2b74e'
 };
+
+// Function to compute and verify event signatures
+function computeEventSignatures() {
+  const computedSignatures = EVENT_ABIS.reduce((acc, eventAbi) => {
+    const fragment = Fragment.from(eventAbi) as EventFragment;
+    const signature = id(fragment.format());
+    const eventName = fragment.name;
+    acc[eventName] = signature;
+    return acc;
+  }, {} as Record<string, string>);
+
+  // Compare with known signatures
+  console.log('Event Signature Verification:');
+  console.log('=============================');
+  Object.entries(computedSignatures).forEach(([eventName, computedSig]) => {
+    const knownSig = KNOWN_SIGNATURES[eventName as keyof typeof KNOWN_SIGNATURES];
+    console.log(`Event: ${eventName}`);
+    console.log(`Computed: ${computedSig}`);
+    console.log(`Known:    ${knownSig}`);
+    console.log(`Match:    ${computedSig === knownSig}`);
+    console.log('-----------------------------');
+  });
+
+  return computedSignatures;
+}
+
 export class EventListener {
   private provider: WebSocketProvider;
   private nftContract: Contract;
@@ -116,6 +142,17 @@ export class EventListener {
         region: config.awsRegion,
         maxAttempts: 3,
         retryMode: 'standard'
+      });
+      
+      // Verify event signatures
+      const computedSignatures = computeEventSignatures();
+      this.logger.info('Event signature verification', {
+        signatures: Object.entries(computedSignatures).map(([name, sig]) => ({
+          event: name,
+          computed: sig,
+          known: KNOWN_SIGNATURES[name as keyof typeof KNOWN_SIGNATURES],
+          matches: sig === KNOWN_SIGNATURES[name as keyof typeof KNOWN_SIGNATURES]
+        }))
       });
       
       // Log Kinesis configuration without credentials for now
