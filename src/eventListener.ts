@@ -485,6 +485,15 @@ export class EventListener {
         throw error;
       });
 
+      // Log Kinesis shard assignment immediately after sending
+      this.logger.info('Kinesis shard assignment', {
+        shardId: result.ShardId,
+        partitionKey: command.input.PartitionKey,
+        sequenceNumber: result.SequenceNumber,
+        eventType: event.type,
+        transactionHash: event.transactionHash
+      });
+
       // Update Kinesis metrics
       updateMetrics.updateKinesis({
         recordsSent: metrics.kinesis.recordsSent + 1,
