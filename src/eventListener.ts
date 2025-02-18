@@ -41,10 +41,15 @@ export class EventListener {
     this.logger = new Logger('EventListener');
     
     try {
+      // Get environment from config
+      const env = process.env.NODE_ENV || 'dev';
+      const tableSuffix = env === 'prod' ? '-prod-v5' : '';
+      
       this.logger.info('Starting event listener with config', {
         nftContractAddress: config.nftContractAddress,
         wsRpcUrl: config.wsRpcUrl,
         kinesisStreamName: config.kinesisStreamName,
+        dynamoTableName: `${config.kinesisStreamName}${tableSuffix}-events`,
         wsConfig: {
           maxReconnectAttempts: this.maxReconnectAttempts,
           baseReconnectDelay: this.baseReconnectDelay,
@@ -52,8 +57,12 @@ export class EventListener {
         }
       });
 
-      // Initialize DynamoDB client
-      const dynamoDbClient = new DynamoDBClient({ region: config.awsRegion });
+      // Initialize DynamoDB client with retry configuration
+      const dynamoDbClient = new DynamoDBClient({ 
+        region: config.awsRegion,
+        maxAttempts: 5,
+        retryMode: 'adaptive'
+      });
       this.dynamoDb = DynamoDBDocument.from(dynamoDbClient);
 
       // Validate contract addresses
@@ -235,16 +244,33 @@ export class EventListener {
   private async handleEvent(event: any) {
     try {
       const eventId = `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`;
+      const env = process.env.NODE_ENV || 'dev';
+      const tableSuffix = env === 'prod' ? '-prod-v5' : '';
+      const tableName = `${this.config.kinesisStreamName}${tableSuffix}-events`;
       
       // Check if event has already been processed
-      const existingEvent = await this.dynamoDb.get({
-        TableName: `${this.config.kinesisStreamName}-events`,
-        Key: { eventId }
-      });
+      try {
+        const existingEvent = await this.dynamoDb.get({
+          TableName: tableName,
+          Key: { eventId }
+        });
 
-      if (existingEvent.Item) {
-        this.logger.info('Event already processed, skipping', { eventId });
-        return;
+        if (existingEvent.Item) {
+          this.logger.info('Event already processed, skipping', { 
+            eventId,
+            tableName 
+          });
+          return;
+        }
+      } catch (error: any) {
+        if (error?.name === 'AccessDeniedException') {
+          this.logger.error('DynamoDB access denied', {
+            tableName,
+            error: error.message,
+            action: 'GetItem'
+          });
+        }
+        throw error;
       }
 
       // Create the appropriate event payload based on event type
@@ -356,15 +382,26 @@ export class EventListener {
       });
 
       // Store event ID in DynamoDB for deduplication
-      await this.dynamoDb.put({
-        TableName: `${this.config.kinesisStreamName}-events`,
-        Item: {
-          eventId,
-          eventType: eventPayload.type,
-          processedAt: Date.now(),
-          ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
+      try {
+        await this.dynamoDb.put({
+          TableName: tableName,
+          Item: {
+            eventId,
+            eventType: eventPayload.type,
+            processedAt: Date.now(),
+            ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
+          }
+        });
+      } catch (error: any) {
+        if (error?.name === 'AccessDeniedException') {
+          this.logger.error('DynamoDB access denied', {
+            tableName,
+            error: error.message,
+            action: 'PutItem'
+          });
         }
-      });
+        throw error;
+      }
 
       this.logger.info('Event processed successfully', {
         eventId,
@@ -400,7 +437,7 @@ export class EventListener {
     });
   }
 
-  private async reconnect() {
+  private async reconnect(): Promise<void> {
     if (this.wsInitializing) {
       this.logger.info('WebSocket initialization already in progress, skipping reconnect');
       return;
@@ -435,19 +472,32 @@ export class EventListener {
         reconnectAttempts: this.reconnectAttempts,
         circuitBreakerOpen: true
       });
-      // Exit the process to let systemd restart it
-      process.exit(1);
-      return;
+      
+      // Instead of exiting, sleep for a longer period
+      const cooldownPeriod = 300000; // 5 minutes
+      this.logger.info(`Entering cooldown period for ${cooldownPeriod}ms`);
+      await new Promise(resolve => setTimeout(resolve, cooldownPeriod));
+      
+      // Reset reconnection attempts and try again
+      this.reconnectAttempts = 0;
+      this.isCircuitBreakerOpen = false;
+      this.lastCircuitBreakerReset = Date.now();
+      return this.reconnect();
     }
 
-    const delay = Math.min(
-      this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
-      this.maxReconnectDelay
-    );
+    // Exponential backoff with jitter for rate limiting
+    const baseDelay = this.baseReconnectDelay;
+    const maxDelay = this.maxReconnectDelay;
+    const attempt = this.reconnectAttempts;
+    
+    // Calculate delay with full jitter
+    const expDelay = Math.min(maxDelay, baseDelay * Math.pow(2, attempt));
+    const delay = Math.floor(Math.random() * expDelay);
 
     this.logger.info('Attempting to reconnect', {
-      attempt: this.reconnectAttempts + 1,
-      delay,
+      attempt: attempt + 1,
+      calculatedDelay: expDelay,
+      actualDelay: delay,
       maxAttempts: this.maxReconnectAttempts,
       baseDelay: this.baseReconnectDelay
     });
