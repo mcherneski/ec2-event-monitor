@@ -15,9 +15,9 @@ const logger = new Logger('Server');
 export const metrics = {
   events: {
     total: 0,
-    transfer: 0,
-    stake: 0,
-    unstake: 0,
+    batchTransfer: 0,
+    batchMint: 0,
+    batchBurn: 0,
     errors: 0,
     lastEventTime: Date.now()
   },
@@ -43,7 +43,7 @@ export const metrics = {
 };
 
 export const updateMetrics = {
-  incrementEvent: (type: 'transfer' | 'stake' | 'unstake' | 'errors') => {
+  incrementEvent: (type: 'batchTransfer' | 'batchMint' | 'batchBurn' | 'errors') => {
     metrics.events[type]++;
     metrics.events.total++;
     metrics.events.lastEventTime = Date.now();

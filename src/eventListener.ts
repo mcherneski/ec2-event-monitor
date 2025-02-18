@@ -7,22 +7,20 @@ import { Logger } from './utils/logger.js';
 import { MetricsPublisher } from './utils/metrics.js';
 import { updateMetrics, metrics } from './run.js';
 import * as ethers from 'ethers';
-import * as DynamoDB from 'aws-sdk/clients/dynamodb';
+import AWS from 'aws-sdk';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
-  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId, bool nft)',
-  'event Mint(address indexed to, uint256 indexed id)',
-  'event Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
-  'event Unstaked(address indexed staker, uint256 tokenId, uint256 indexed id)'
+  'event BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)',
+  'event BatchBurn(address indexed from, uint256 startTokenId, uint256 quantity)',
+  'event BatchTransfer(address indexed from, address indexed to, uint256 startTokenId, uint256 quantity)'
 ];
 
 // Known signatures from the contract for validation
 const KNOWN_SIGNATURES = {
-  Transfer: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
-  Mint: '0x0f6798a560c37ff944517b6dab7f8b08c6e54f4f1591c3f584df4140d08a1cff',
-  Staked: '0x5a7381b9ecd2c9e03819adb90a47c89078658d9d6c8e6e9fb7e5f58aa0a4f85f',
-  Unstaked: '0x85082129d87b2fe11527cb1b3b7a520aeb5aa6913f88a3d8757fe40d1db02fdd'
+  BatchMint: '0x2da466a7b24304f47e87fa2e1e5a81b9831ce54fec19055ce277ca2f39ba42c4',
+  BatchBurn: '0x1b0acb9f2e1e40b85f49c94aeca2c4bfdc2b514f520fa654a01226f2e30d1a31',
+  BatchTransfer: '0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb'
 };
 
 // Function to compute and verify event signatures
@@ -58,7 +56,7 @@ export class EventListener {
   private metrics: MetricsPublisher;
   private logger: Logger;
   private config: Config;
-  private dynamoDb: DynamoDB.DocumentClient;
+  private dynamoDb: AWS.DynamoDB.DocumentClient;
   private reconnectAttempts: number = 0;
   private heartbeatInterval?: NodeJS.Timeout;
   private consumerId?: string;
@@ -72,7 +70,7 @@ export class EventListener {
   constructor(config: Config) {
     this.config = config;
     this.logger = new Logger('EventListener');
-    this.dynamoDb = new DynamoDB.DocumentClient();
+    this.dynamoDb = new AWS.DynamoDB.DocumentClient();
     
     try {
       this.logger.info('Starting event listener with config', {
@@ -271,7 +269,7 @@ export class EventListener {
       });
 
       // Create and verify filters for each event type
-      const eventTypes = ['Transfer', 'Mint', 'Staked', 'Unstaked'];
+      const eventTypes = ['BatchMint', 'BatchBurn', 'BatchTransfer'];
       for (const eventType of eventTypes) {
         try {
           const filter = this.nftContract.filters[eventType]();
@@ -411,73 +409,46 @@ export class EventListener {
     }
 
     // NFT Contract Events
-    this.nftContract.on('Mint', async (to, id, event) => {
-      this.logger.info('📥 WEBSOCKET EVENT: Received Mint event', { 
-        id: id.toString(), 
+    this.nftContract.on('BatchMint', async (to, startTokenId, quantity, event) => {
+      this.logger.info('📥 WEBSOCKET EVENT: Received BatchMint event', { 
+        startTokenId: startTokenId.toString(), 
+        quantity: quantity.toString(),
         to: to.toLowerCase(),
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber
       });
       try {
-        // Wait for transaction receipt to get block info
         const receipt = await event.getTransactionReceipt();
-        this.logger.info('🔄 PROCESSING: Getting transaction receipt', {
-          transactionHash: event.transactionHash,
-          blockNumber: receipt.blockNumber,
-          status: receipt.status
-        });
-
         const block = await event.getBlock();
-        this.logger.info('🔄 PROCESSING: Got block info', {
-          blockNumber: block.number,
-          timestamp: block.timestamp,
-          hash: block.hash
-        });
         
-        // Convert id to hex string with proper padding
-        const idHex = ethers.toBeHex(id, 32);
-        
-        // Find the Mint event log by matching the signature and id
-        const mintEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
-          log.topics[0] === KNOWN_SIGNATURES.Mint && 
-          log.topics[2] === idHex
-        );
-
-        if (!mintEventLog) {
-          throw new Error('Could not find Mint event log in transaction receipt');
+        // Process each token in the batch
+        for (let i = 0; i < quantity.toNumber(); i++) {
+          const tokenId = startTokenId.toNumber() + i;
+          const eventPayload: OnChainEvent = {
+            type: 'BatchMint',
+            to: to.toLowerCase(),
+            tokenId: tokenId.toString(),
+            startTokenId: startTokenId.toString(),
+            quantity: quantity.toString(),
+            timestamp: block.timestamp,
+            transactionHash: event.transactionHash,
+            blockNumber: receipt.blockNumber,
+            transactionIndex: receipt.index,
+            logIndex: event.index.toString(16)
+          };
+          
+          await this.handleEvent(eventPayload);
         }
-
-        const logIndex = mintEventLog.index;
-
-        const eventPayload: OnChainEvent = {
-          type: 'Mint',
-          to: to.toLowerCase(),
-          id: id.toString(),
-          timestamp: block.timestamp,
-          transactionHash: event.transactionHash,
-          blockNumber: receipt.blockNumber,
-          transactionIndex: receipt.index,
-          logIndex: logIndex.toString(16)  // Convert to hex string
-        };
-
-        this.logger.info('📦 PROCESSING: Created event payload', {
-          type: 'Mint',
-          id: id.toString(),
-          blockNumber: receipt.blockNumber,
-          transactionHash: event.transactionHash
-        });
-        
-        await this.handleEvent(eventPayload);
-        
       } catch (error) {
-        this.logger.error('❌ ERROR: Failed to process Mint event', {
+        this.logger.error('❌ ERROR: Failed to process BatchMint event', {
           error: error instanceof Error ? {
             message: error.message,
             stack: error.stack
           } : error,
           eventData: {
             to, 
-            id: id.toString(),
+            startTokenId: startTokenId.toString(),
+            quantity: quantity.toString(),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -485,82 +456,96 @@ export class EventListener {
       }
     });
 
-    // NFT Contract Transfer Event
-    this.nftContract.on('Transfer', async (from, to, tokenId, nft, event) => {
-      this.logger.info('Received Transfer event', { 
-        tokenId: tokenId.toString(), 
-        from: from.toLowerCase(), 
-        to: to.toLowerCase(),
-        nft
+    this.nftContract.on('BatchBurn', async (from, startTokenId, quantity, event) => {
+      this.logger.info('📥 WEBSOCKET EVENT: Received BatchBurn event', { 
+        startTokenId: startTokenId.toString(), 
+        quantity: quantity.toString(),
+        from: from.toLowerCase(),
+        transactionHash: event.transactionHash,
+        blockNumber: event.blockNumber
       });
       try {
-        const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
+        const block = await event.getBlock();
         
-        // Convert tokenId to hex string with proper padding
-        const tokenIdHex = ethers.toBeHex(tokenId, 32);
-        
-        // Find the Transfer event log by matching the signature and tokenId
-        const transferEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
-          log.topics[0] === KNOWN_SIGNATURES.Transfer && 
-          log.topics[3] === tokenIdHex
-        );
-
-        if (!transferEventLog) {
-          throw new Error('Could not find Transfer event log in transaction receipt');
-        }
-
-        const logIndex = transferEventLog.index;
-
-        // Determine if this is a staking-related transfer
-        const isStakingContract = typeof this.stakingContract.target === 'string' &&
-          this.stakingContract.target.toLowerCase();
-        const toStaking = to.toLowerCase() === isStakingContract;
-        const fromStaking = from.toLowerCase() === isStakingContract;
-
-        // If this is a staking-related transfer, create a synthetic Staked/Unstaked event
-        if (toStaking || fromStaking) {
-          const eventType = toStaking ? 'Staked' : 'Unstaked';
-          const staker = toStaking ? from.toLowerCase() : to.toLowerCase();
-          this.logger.info(`Received ${eventType} event`, { tokenId: tokenId.toString(), staker });
-
-          const stakingEvent: OnChainEvent = {
-            type: toStaking ? 'Staked' as const : 'Unstaked' as const,
-            staker: toStaking ? from.toLowerCase() : to.toLowerCase(),
+        // Process each token in the batch
+        for (let i = 0; i < quantity.toNumber(); i++) {
+          const tokenId = startTokenId.toNumber() + i;
+          const eventPayload: OnChainEvent = {
+            type: 'BatchBurn',
+            from: from.toLowerCase(),
             tokenId: tokenId.toString(),
-            id: tokenId.toString(),
+            startTokenId: startTokenId.toString(),
+            quantity: quantity.toString(),
             timestamp: block.timestamp,
             transactionHash: event.transactionHash,
-            blockNumber: event.blockNumber,
-            transactionIndex: event.transactionIndex,
-            logIndex: logIndex.toString(16)
+            blockNumber: receipt.blockNumber,
+            transactionIndex: receipt.index,
+            logIndex: event.index.toString(16)
           };
           
-          await this.handleEvent(stakingEvent);
-          return; // Skip sending the transfer event
+          await this.handleEvent(eventPayload);
         }
-
-        // Only process non-staking transfers
-        await this.handleEvent({
-          type: 'Transfer',
-          from: from.toLowerCase(),
-          to: to.toLowerCase(),
-          tokenId: tokenId.toString(),
-          nft,
-          timestamp: block.timestamp,
-          transactionHash: event.transactionHash,
-          blockNumber: event.blockNumber,
-          transactionIndex: event.transactionIndex,
-          logIndex: logIndex.toString(16)
-        });
       } catch (error) {
-        this.logger.error('Error in Transfer event handler', {
+        this.logger.error('❌ ERROR: Failed to process BatchBurn event', {
           error: error instanceof Error ? {
             message: error.message,
             stack: error.stack
           } : error,
           eventData: {
-            from, to, tokenId: tokenId.toString(), nft,
+            from,
+            startTokenId: startTokenId.toString(),
+            quantity: quantity.toString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          }
+        });
+      }
+    });
+
+    this.nftContract.on('BatchTransfer', async (from, to, startTokenId, quantity, event) => {
+      this.logger.info('📥 WEBSOCKET EVENT: Received BatchTransfer event', { 
+        startTokenId: startTokenId.toString(), 
+        quantity: quantity.toString(),
+        from: from.toLowerCase(),
+        to: to.toLowerCase(),
+        transactionHash: event.transactionHash,
+        blockNumber: event.blockNumber
+      });
+      try {
+        const receipt = await event.getTransactionReceipt();
+        const block = await event.getBlock();
+        
+        // Process each token in the batch
+        for (let i = 0; i < quantity.toNumber(); i++) {
+          const tokenId = startTokenId.toNumber() + i;
+          const eventPayload: OnChainEvent = {
+            type: 'BatchTransfer',
+            from: from.toLowerCase(),
+            to: to.toLowerCase(),
+            tokenId: tokenId.toString(),
+            startTokenId: startTokenId.toString(),
+            quantity: quantity.toString(),
+            timestamp: block.timestamp,
+            transactionHash: event.transactionHash,
+            blockNumber: receipt.blockNumber,
+            transactionIndex: receipt.index,
+            logIndex: event.index.toString(16)
+          };
+          
+          await this.handleEvent(eventPayload);
+        }
+      } catch (error) {
+        this.logger.error('❌ ERROR: Failed to process BatchTransfer event', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          eventData: {
+            from,
+            to,
+            startTokenId: startTokenId.toString(),
+            quantity: quantity.toString(),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -614,7 +599,7 @@ export class EventListener {
 
     // Test event subscription by querying past events
     try {
-      const filter = this.nftContract.filters.Transfer();
+      const filter = this.nftContract.filters.BatchTransfer();
       const pastEvents = await this.nftContract.queryFilter(filter, -10000); // Last 10000 blocks
       this.logger.info('📋 SETUP: Past events query test', {
         eventCount: pastEvents.length,
@@ -642,11 +627,12 @@ export class EventListener {
       this.logger.info('📤 KINESIS: Starting event processing', {
         eventType: event.type,
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        tokenId: event.tokenId
       });
 
       // Update event metrics based on type
-      updateMetrics.incrementEvent(event.type.toLowerCase() as any);
+      updateMetrics.incrementEvent(event.type.toLowerCase() as 'batchTransfer' | 'batchMint' | 'batchBurn' | 'errors');
       this.logger.info('📊 METRICS: Updated for event type', {
         eventType: event.type,
         metricsUpdated: true
@@ -660,29 +646,43 @@ export class EventListener {
       
       const data = Buffer.from(JSON.stringify(event));
       
-      // Generate a unique partition key using available data
+      // Create a queue ordering that includes blockNumber, transactionIndex, and last 6 digits of tokenId
+      // Format: <blockNumber><transactionIndex><last6DigitsOfId>
+      // This ensures proper ordering within batches while maintaining global order
+      // blockNumber: 9 digits (supports ~1 billion blocks, >30 years on Base)
+      // transactionIndex: 6 digits (supports up to 999,999 transactions per block)
+      // tokenId: last 6 digits (padded with leading zeros if needed)
+      const tokenIdStr = event.tokenId.toString();
+      const last6Digits = tokenIdStr.slice(-6).padStart(6, '0');
+      const queueOrder = `${event.blockNumber.toString().padStart(9, '0')}${event.transactionIndex.toString().padStart(6, '0')}${last6Digits}`;
+      
+      // Generate a unique partition key using available data and queue order
       const partitionKey = (() => {
         switch (event.type) {
-          case 'Mint':
-            return `${event.type}-${event.id}`;
-          case 'Transfer':
-            return `${event.type}-${event.tokenId}-${event.transactionHash}`;
-          case 'Staked':
-          case 'Unstaked':
-            return `${event.type}-${event.tokenId}-${event.transactionHash}`;
+          case 'BatchMint':
+          case 'BatchBurn':
+          case 'BatchTransfer':
+            return `${event.type}-${event.startTokenId}-${event.transactionHash}-${queueOrder}`;
         }
       })();
+
+      // Add queue order to the event data
+      const enrichedEvent = {
+        ...event,
+        queueOrder
+      };
 
       const command = new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
         PartitionKey: partitionKey,
-        Data: data
+        Data: Buffer.from(JSON.stringify(enrichedEvent))
       });
 
       this.logger.info('📤 KINESIS: Sending event', {
         streamName: this.config.kinesisStreamName,
         eventType: event.type,
         transactionHash: event.transactionHash,
+        queueOrder,
         dataSize: data.length
       });
 
@@ -697,15 +697,17 @@ export class EventListener {
         blockNumber: event.blockNumber,
         timestamp: new Date().toISOString(),
         streamName: this.config.kinesisStreamName,
-        partitionKey
+        partitionKey,
+        queueOrder
       };
 
       // Add type-specific properties to log data
-      if (event.type === 'Transfer' || event.type === 'Staked' || event.type === 'Unstaked') {
-        Object.assign(logData, { tokenId: event.tokenId });
-      }
-      if (event.type === 'Mint') {
-        Object.assign(logData, { id: event.id });
+      if (event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer') {
+        Object.assign(logData, { 
+          startTokenId: event.startTokenId, 
+          quantity: event.quantity,
+          tokenId: event.tokenId
+        });
       }
 
       this.logger.info('✅ KINESIS: Event sent successfully', logData);
@@ -718,7 +720,7 @@ export class EventListener {
       });
 
       // Handle events with proper type checks
-      if (event.type === 'Transfer' || event.type === 'Mint' || event.type === 'Staked' || event.type === 'Unstaked') {
+      if (event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer') {
         // Process the event...
       }
 
