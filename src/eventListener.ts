@@ -409,7 +409,7 @@ export class EventListener {
     }
 
     // NFT Contract Events
-    this.nftContract.on('BatchMint', async (to, startTokenId, quantity, event) => {
+    this.nftContract.on('BatchMint', async (to: string, startTokenId: bigint, quantity: bigint, event: EventLog) => {
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchMint event', { 
         startTokenId: startTokenId.toString(), 
         quantity: quantity.toString(),
@@ -451,7 +451,7 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('BatchBurn', async (from, startTokenId, quantity, event) => {
+    this.nftContract.on('BatchBurn', async (from: string, startTokenId: bigint, quantity: bigint, event: EventLog) => {
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchBurn event', { 
         startTokenId: startTokenId.toString(), 
         quantity: quantity.toString(),
@@ -493,7 +493,7 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('BatchTransfer', async (from, to, startTokenId, quantity, event) => {
+    this.nftContract.on('BatchTransfer', async (from: string, to: string, startTokenId: bigint, quantity: bigint, event: EventLog) => {
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchTransfer event', { 
         startTokenId: startTokenId.toString(), 
         quantity: quantity.toString(),
@@ -539,7 +539,7 @@ export class EventListener {
     });
 
     // Add Stake and Unstake event listeners
-    this.nftContract.on('Stake', async (account, tokenId, event) => {
+    this.nftContract.on('Stake', async (account: string, tokenId: bigint, event: EventLog) => {
       const eventId = `${event.blockNumber}-${event.transactionHash}-${event.index.toString(16)}`;
       this.logger.info('📥 WEBSOCKET EVENT: Received Stake event', { 
         tokenId: tokenId.toString(),
@@ -578,7 +578,7 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('Unstake', async (account, tokenId, event) => {
+    this.nftContract.on('Unstake', async (account: string, tokenId: bigint, event: EventLog) => {
       this.logger.info('📥 WEBSOCKET EVENT: Received Unstake event', { 
         tokenId: tokenId.toString(),
         account: account.toLowerCase(),
