@@ -121,23 +121,33 @@ sudo bash -c "cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
 Description=NGU Event Monitor Service (${NODE_ENV} environment)
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
 User=ec2-user
 Group=ec2-user
 WorkingDirectory=/home/ec2-user/event-monitor
-# Set NODE_ENV explicitly to prevent any ambiguity
 Environment=NODE_ENV=${NODE_ENV}
 Environment=AWS_REGION=us-east-1
-Environment=NODE_OPTIONS=\"--experimental-specifier-resolution=node\"
+Environment=NODE_OPTIONS="--experimental-specifier-resolution=node"
+Environment=WS_RECONNECT_DELAY=5000
+Environment=WS_MAX_RECONNECT_ATTEMPTS=20
+Environment=WS_CIRCUIT_BREAKER_TIMEOUT=600000
 EnvironmentFile=/home/ec2-user/event-monitor/.env
 ExecStart=${NODE_PATH} dist/run.js
-Restart=always
+Restart=on-failure
 RestartSec=10
 StandardOutput=append:${LOG_DIR}/${SERVICE_NAME}.log
 StandardError=append:${LOG_DIR}/${SERVICE_NAME}.error.log
 SyslogIdentifier=${SERVICE_NAME}
+
+# Give the service some time to start up
+TimeoutStartSec=30
+# Limit restart attempts
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Install]
 WantedBy=multi-user.target

@@ -67,22 +67,24 @@ function computeEventSignatures() {
 }
 
 export class EventListener {
-  private provider: WebSocketProvider;
-  private nftContract: Contract;
-  private kinesis: KinesisClient;
-  private metrics: MetricsPublisher;
-  private logger: Logger;
-  private config: Config;
-  private dynamoDb: DynamoDBDocument;
+  private readonly config: Config;
+  private readonly logger: Logger;
+  private ws?: WebSocket;
+  private provider!: WebSocketProvider;
+  private nftContract!: Contract;
   private reconnectAttempts: number = 0;
   private heartbeatInterval?: NodeJS.Timeout;
-  private consumerId?: string;
-  private maxReconnectAttempts: number = 10;
-  private baseReconnectDelay: number = 1000; // 1 second
+  private maxReconnectAttempts: number = parseInt(process.env.WS_MAX_RECONNECT_ATTEMPTS || '10');
+  private baseReconnectDelay: number = parseInt(process.env.WS_RECONNECT_DELAY || '1000');
   private maxReconnectDelay: number = 300000; // 5 minutes
-  private circuitBreakerTimeout: number = 600000; // 10 minutes
+  private circuitBreakerTimeout: number = parseInt(process.env.WS_CIRCUIT_BREAKER_TIMEOUT || '600000');
   private lastCircuitBreakerReset: number = Date.now();
   private isCircuitBreakerOpen: boolean = false;
+  private wsInitializing: boolean = false;
+  private kinesis: KinesisClient;
+  private metrics: MetricsPublisher;
+  private dynamoDb: DynamoDBDocument;
+  private consumerId?: string;
 
   constructor(config: Config) {
     this.config = config;
@@ -92,7 +94,12 @@ export class EventListener {
       this.logger.info('Starting event listener with config', {
         nftContractAddress: config.nftContractAddress,
         wsRpcUrl: config.wsRpcUrl,
-        kinesisStreamName: config.kinesisStreamName
+        kinesisStreamName: config.kinesisStreamName,
+        wsConfig: {
+          maxReconnectAttempts: this.maxReconnectAttempts,
+          baseReconnectDelay: this.baseReconnectDelay,
+          circuitBreakerTimeout: this.circuitBreakerTimeout
+        }
       });
 
       // Initialize DynamoDB client
@@ -110,36 +117,7 @@ export class EventListener {
         providedNFTAddress: config.nftContractAddress
       });
       
-      const wsCreator = () => {
-        const ws = new WebSocket(config.wsRpcUrl, {
-          handshakeTimeout: 5000,
-          maxPayload: 100 * 1024 * 1024 // 100MB
-        });
-        
-        ws.onopen = () => {
-          this.logger.info('WebSocket connection established successfully');
-          updateMetrics.updateWebsocket({
-            connected: true,
-            lastReconnectAttempt: Date.now()
-          });
-        };
-        
-        ws.onerror = (error: WebSocket.ErrorEvent) => {
-          this.logger.error('WebSocket connection error in constructor', error);
-          updateMetrics.updateWebsocket({
-            connected: false,
-            lastReconnectAttempt: Date.now(),
-            reconnectAttempts: ++this.reconnectAttempts
-          });
-        };
-        
-        return ws;
-      };
-      
-      this.provider = new WebSocketProvider(wsCreator, "base", {
-        staticNetwork: true,
-        batchMaxCount: 1
-      });
+      this.initializeWebSocket();
       
       this.nftContract = new Contract(config.nftContractAddress, EVENT_ABIS, this.provider);
       
@@ -691,237 +669,58 @@ export class EventListener {
     });
   }
 
-  private async handleEvent(event: OnChainEvent) {
+  private async handleEvent(event: any) {
     try {
-      // Create a unique event identifier for deduplication
       const eventId = `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`;
       
-      this.logger.info('🔄 KINESIS: Starting event processing', {
-        eventType: event.type,
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber,
-        ...(event.type === 'Stake' || event.type === 'Unstake' 
-          ? { tokenId: event.tokenId }
-          : { 
-              startTokenId: event.startTokenId,
-              quantity: event.quantity 
-            }),
-        eventId
+      // Check if event has already been processed
+      const existingEvent = await this.dynamoDb.get({
+        TableName: `${this.config.kinesisStreamName}-events`,
+        Key: { eventId }
       });
 
-      // Check DynamoDB for duplicate event
-      const checkDuplicate = await this.dynamoDb.send(new GetCommand({
-        TableName: `${this.config.kinesisStreamName}-events`,
-        Key: {
-          eventId: eventId
-        }
-      }));
-
-      if (checkDuplicate.Item) {
-        this.logger.info('⚠️ KINESIS: Duplicate event detected, skipping', {
-          eventId,
-          eventType: event.type,
-          transactionHash: event.transactionHash
-        });
+      if (existingEvent.Item) {
+        this.logger.info('Event already processed, skipping', { eventId });
         return;
       }
 
-      // Update event metrics based on type
-      updateMetrics.incrementEvent(event.type.toLowerCase() as 'batchTransfer' | 'batchMint' | 'batchBurn' | 'stake' | 'unstake' | 'errors');
-      this.logger.info('📊 METRICS: Updated for event type', {
-        eventType: event.type,
-        metricsUpdated: true
-      });
-      
-      // Verify Kinesis credentials before sending
-      const credentials = await this.kinesis.config.credentials();
-      this.logger.info('🔐 KINESIS: Verified credentials', {
-        hasValidCredentials: !!credentials,
-        streamName: this.config.kinesisStreamName,
-        credentialProvider: credentials?.constructor?.name,
-        identityId: (credentials as any)?.identityId,
-        accessKeyId: credentials?.accessKeyId?.substring(0, 5) + '...'
-      });
-      
-      // Calculate queue position based on event type
-      const queueOrder = (() => {
-        const blockPart = event.blockNumber.toString().padStart(9, '0');
-        const txPart = event.transactionIndex.toString().padStart(6, '0');
-        
-        switch (event.type) {
-          case 'Unstake': {
-            const tokenNum = event.tokenId;
-            const negativePosition = (-999999 + (tokenNum % 999999)).toString().padStart(6, '0');
-            return `${blockPart}${txPart}-${negativePosition}`;
-          }
-            
-          case 'BatchTransfer':
-          case 'BatchMint': {
-            const startTokenNum = event.startTokenId;
-            const last6Digits = startTokenNum.toString().padStart(6, '0');
-            return `${blockPart}${txPart}${last6Digits}`;
-          }
-            
-          case 'Stake':
-            return '';
-            
-          case 'BatchBurn': {
-            const burnTokenNum = event.startTokenId;
-            const burnLast6Digits = burnTokenNum.toString().padStart(6, '0');
-            return `${blockPart}${txPart}${burnLast6Digits}`;
-          }
-        }
-      })();
-
-      // Generate partition key
-      const partitionKey = (() => {
-        switch (event.type) {
-          case 'BatchMint':
-          case 'BatchBurn':
-          case 'BatchTransfer':
-            return `${event.type}-${event.startTokenId}-${event.transactionHash}-${queueOrder}`;
-          case 'Stake':
-          case 'Unstake':
-            return `${event.type}-${event.tokenId}-${event.transactionHash}-${queueOrder}`;
-        }
-      })();
-
-      // Enrich event with queue order
+      // Enrich event data
       const enrichedEvent = {
         ...event,
-        ...(queueOrder && { queueOrder }),
-        eventId
+        eventId,
+        timestamp: Date.now(),
+        environment: this.config.environment
       };
 
-      this.logger.info('📤 KINESIS: Preparing to send event', {
-        streamName: this.config.kinesisStreamName,
-        eventType: event.type,
-        transactionHash: event.transactionHash,
-        queueOrder,
+      // Send to Kinesis
+      const result = await this.kinesis.send(new PutRecordCommand({
+        StreamName: this.config.kinesisStreamName,
+        Data: Buffer.from(JSON.stringify(enrichedEvent)),
+        PartitionKey: eventId
+      }));
+
+      this.logger.info('Event sent to Kinesis', {
         eventId,
-        partitionKey,
-        dataSize: JSON.stringify(enrichedEvent).length,
-        eventData: enrichedEvent,
-        kinesisConfig: {
-          region: this.kinesis.config.region,
-          maxAttempts: this.kinesis.config.maxAttempts,
-          retryMode: this.kinesis.config.retryMode
-        }
+        shardId: result.ShardId,
+        sequenceNumber: result.SequenceNumber
       });
 
-      try {
-        const command = new PutRecordCommand({
-          StreamName: this.config.kinesisStreamName,
-          PartitionKey: partitionKey,
-          Data: Buffer.from(JSON.stringify(enrichedEvent))
-        });
-
-        this.logger.info('📤 KINESIS: Sending command details', {
-          command: {
-            streamName: command.input.StreamName,
-            partitionKey: command.input.PartitionKey,
-            dataSize: command.input.Data?.length ?? 0,
-            eventType: event.type,
-            blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash,
-            data: enrichedEvent
-          }
-        });
-
-        const result = await this.kinesis.send(command);
-
-        this.logger.info('📤 KINESIS: Send result details', {
-          result: {
-            shardId: result.ShardId,
-            sequenceNumber: result.SequenceNumber,
-            encryptionType: result.EncryptionType,
-            status: 'success'
-          },
-          command: {
-            streamName: command.input.StreamName,
-            partitionKey: command.input.PartitionKey,
-            eventType: event.type,
-            blockNumber: event.blockNumber
-          }
-        });
-
-        // Store event ID in DynamoDB for deduplication
-        await this.dynamoDb.send(new PutCommand({
-          TableName: `${this.config.kinesisStreamName}-events`,
-          Item: {
-            eventId: eventId,
-            timestamp: Date.now(),
-            ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
-          }
-        }));
-
-        this.logger.info('✅ KINESIS: Event sent successfully', {
-          eventType: event.type,
-          shardId: result.ShardId,
-          sequenceNumber: result.SequenceNumber,
-          transactionHash: event.transactionHash,
-          blockNumber: event.blockNumber,
-          timestamp: new Date().toISOString(),
-          streamName: this.config.kinesisStreamName,
-          partitionKey,
-          queueOrder,
+      // Store event ID in DynamoDB for deduplication
+      await this.dynamoDb.put({
+        TableName: `${this.config.kinesisStreamName}-events`,
+        Item: {
           eventId,
-          ...(event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer' 
-            ? { startTokenId: event.startTokenId, quantity: event.quantity }
-            : { tokenId: event.tokenId })
-        });
-
-        // Update Kinesis metrics
-        updateMetrics.updateKinesis({
-          recordsSent: metrics.kinesis.recordsSent + 1,
-          batchesSent: metrics.kinesis.batchesSent + 1,
-          lastBatchTime: Date.now()
-        });
-
-      } catch (error) {
-        this.logger.error('❌ KINESIS: Failed to send event', { 
-          error: error instanceof Error ? {
-            message: error.message,
-            stack: error.stack,
-            code: (error as any).code,
-            requestId: (error as any).$metadata?.requestId
-          } : error,
-          eventDetails: {
-            type: event.type,
-            transactionHash: event.transactionHash,
-            blockNumber: event.blockNumber
-          }
-        });
-        
-        // Update metrics
-        updateMetrics.incrementEvent('errors');
-        updateMetrics.updateKinesis({
-          errors: metrics.kinesis.errors + 1
-        });
-
-        throw error;
-      }
-    } catch (error) {
-      this.logger.error('❌ KINESIS: Failed to send event', { 
-        error: error instanceof Error ? {
-          message: error.message,
-          stack: error.stack,
-          code: (error as any).code,
-          requestId: (error as any).$metadata?.requestId
-        } : error,
-        eventDetails: {
-          type: event.type,
-          transactionHash: event.transactionHash,
-          blockNumber: event.blockNumber
+          processedAt: Date.now(),
+          ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
         }
       });
-      
-      // Update metrics
-      updateMetrics.incrementEvent('errors');
-      updateMetrics.updateKinesis({
-        errors: metrics.kinesis.errors + 1
-      });
 
+      this.logger.info('Event processed successfully', { eventId });
+    } catch (error) {
+      this.logger.error('Failed to process event', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        event
+      });
       throw error;
     }
   }
@@ -949,20 +748,33 @@ export class EventListener {
   }
 
   private async reconnect() {
+    if (this.wsInitializing) {
+      this.logger.info('WebSocket initialization already in progress, skipping reconnect');
+      return;
+    }
+
     if (this.isCircuitBreakerOpen) {
       if (Date.now() - this.lastCircuitBreakerReset > this.circuitBreakerTimeout) {
-        this.logger.info('Circuit breaker timeout elapsed, resetting circuit breaker');
+        this.logger.info('Circuit breaker timeout elapsed, resetting circuit breaker', {
+          timeout: this.circuitBreakerTimeout,
+          lastReset: this.lastCircuitBreakerReset
+        });
         this.isCircuitBreakerOpen = false;
         this.reconnectAttempts = 0;
         this.lastCircuitBreakerReset = Date.now();
       } else {
-        this.logger.warn('Circuit breaker is open, skipping reconnection attempt');
+        this.logger.warn('Circuit breaker is open, skipping reconnection attempt', {
+          timeUntilReset: this.circuitBreakerTimeout - (Date.now() - this.lastCircuitBreakerReset)
+        });
         return;
       }
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.logger.error('Max reconnection attempts reached, opening circuit breaker');
+      this.logger.error('Max reconnection attempts reached, opening circuit breaker', {
+        attempts: this.reconnectAttempts,
+        maxAttempts: this.maxReconnectAttempts
+      });
       this.isCircuitBreakerOpen = true;
       updateMetrics.updateWebsocket({
         connected: false,
@@ -970,6 +782,8 @@ export class EventListener {
         reconnectAttempts: this.reconnectAttempts,
         circuitBreakerOpen: true
       });
+      // Exit the process to let systemd restart it
+      process.exit(1);
       return;
     }
 
@@ -981,62 +795,12 @@ export class EventListener {
     this.logger.info('Attempting to reconnect', {
       attempt: this.reconnectAttempts + 1,
       delay,
-      maxAttempts: this.maxReconnectAttempts
+      maxAttempts: this.maxReconnectAttempts,
+      baseDelay: this.baseReconnectDelay
     });
 
     await new Promise(resolve => setTimeout(resolve, delay));
-
-    try {
-      // Stop existing listeners and intervals
-      if (this.heartbeatInterval) {
-        clearInterval(this.heartbeatInterval);
-      }
-      
-      // Create new provider and contracts
-      const wsCreator = this.createWebSocketProvider();
-      this.provider = new WebSocketProvider(wsCreator, "base", {
-        staticNetwork: true,
-        batchMaxCount: 1
-      });
-
-      this.nftContract = new Contract(this.config.nftContractAddress, EVENT_ABIS, this.provider);
-      
-      // Reinitialize event listeners
-      await this.setupEventListeners();
-      this.startHeartbeat();
-
-      this.logger.info('Reconnection successful');
-      this.reconnectAttempts = 0;
-      updateMetrics.updateWebsocket({
-        connected: true,
-        lastReconnectAttempt: Date.now(),
-        reconnectAttempts: 0,
-        circuitBreakerOpen: false
-      });
-    } catch (error) {
-      this.reconnectAttempts++;
-      this.logger.error('Reconnection attempt failed', {
-        error: error instanceof Error ? {
-          message: error.message,
-          stack: error.stack
-        } : error,
-        attempt: this.reconnectAttempts,
-        nextDelay: Math.min(
-          this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
-          this.maxReconnectDelay
-        )
-      });
-      
-      updateMetrics.updateWebsocket({
-        connected: false,
-        lastReconnectAttempt: Date.now(),
-        reconnectAttempts: this.reconnectAttempts,
-        circuitBreakerOpen: false
-      });
-
-      // Schedule next reconnection attempt
-      setTimeout(() => this.reconnect(), 0);
-    }
+    this.initializeWebSocket();
   }
 
   private createWebSocketProvider() {
@@ -1047,31 +811,60 @@ export class EventListener {
       });
       
       ws.onopen = () => {
-        this.logger.info('WebSocket connection established successfully');
+        this.logger.info('🌟 WEBSOCKET: Connection established', {
+          readyState: ws.readyState,
+          url: this.config.wsRpcUrl,
+          timestamp: new Date().toISOString()
+        });
         updateMetrics.updateWebsocket({
           connected: true,
-          lastReconnectAttempt: Date.now(),
-          reconnectAttempts: 0,
-          circuitBreakerOpen: false
+          lastReconnectAttempt: Date.now()
         });
       };
       
       ws.onerror = (error: WebSocket.ErrorEvent) => {
-        this.logger.error('WebSocket connection error', {
+        this.logger.error('❌ WEBSOCKET: Connection error', {
           error: error instanceof Error ? {
             message: error.message,
-            stack: error.stack
+            stack: error.stack,
+            type: error.type,
+            code: (error as any).code
           } : error,
-          reconnectAttempts: this.reconnectAttempts,
-          circuitBreakerOpen: this.isCircuitBreakerOpen
+          readyState: ws.readyState,
+          url: this.config.wsRpcUrl
         });
-        
         updateMetrics.updateWebsocket({
           connected: false,
           lastReconnectAttempt: Date.now(),
-          reconnectAttempts: this.reconnectAttempts,
-          circuitBreakerOpen: this.isCircuitBreakerOpen
+          reconnectAttempts: ++this.reconnectAttempts
         });
+      };
+
+      ws.onclose = (event) => {
+        this.logger.error('❌ WEBSOCKET: Connection closed', {
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+          readyState: ws.readyState,
+          url: this.config.wsRpcUrl
+        });
+      };
+
+      // Add message handler to log any server messages
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data.toString());
+          this.logger.info('📥 WEBSOCKET: Received message', {
+            data,
+            type: event.type,
+            timestamp: new Date().toISOString()
+          });
+        } catch (error) {
+          this.logger.warn('⚠️ WEBSOCKET: Could not parse message', {
+            raw: event.data.toString(),
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
       };
       
       return ws;
@@ -1305,5 +1098,146 @@ export class EventListener {
     updateMetrics.updateWebsocket({
       connected: false
     });
+  }
+
+  private async initializeWebSocket() {
+    try {
+      this.wsInitializing = true;
+      this.logger.info('Initializing WebSocket connection', {
+        url: this.config.wsRpcUrl,
+        attempt: this.reconnectAttempts + 1
+      });
+
+      if (this.ws) {
+        this.logger.info('Cleaning up existing WebSocket connection');
+        this.cleanup();
+      }
+
+      this.ws = new WebSocket(this.config.wsRpcUrl);
+
+      this.ws.on('open', () => {
+        this.logger.info('WebSocket connection established', {
+          readyState: this.ws?.readyState,
+          reconnectAttempts: this.reconnectAttempts
+        });
+        
+        // Reset reconnection counter on successful connection
+        this.reconnectAttempts = 0;
+        this.wsInitializing = false;
+        
+        // Start heartbeat
+        this.startHeartbeat();
+        
+        // Subscribe to events
+        this.subscribeToEvents();
+        
+        updateMetrics.updateWebsocket({
+          connected: true,
+          lastReconnectAttempt: Date.now(),
+          reconnectAttempts: this.reconnectAttempts,
+          circuitBreakerOpen: this.isCircuitBreakerOpen
+        });
+      });
+
+      this.ws.on('close', (code: number, reason: string) => {
+        const wasClean = code === 1000;
+        this.logger.warn('WebSocket connection closed', {
+          code,
+          reason: reason.toString(),
+          wasClean,
+          readyState: this.ws?.readyState
+        });
+        
+        this.cleanup();
+        this.wsInitializing = false;
+        
+        if (!wasClean) {
+          this.reconnectAttempts++;
+          this.reconnect();
+        }
+        
+        updateMetrics.updateWebsocket({
+          connected: false,
+          lastReconnectAttempt: Date.now(),
+          reconnectAttempts: this.reconnectAttempts,
+          circuitBreakerOpen: this.isCircuitBreakerOpen
+        });
+      });
+
+      this.ws.on('error', (error: Error) => {
+        this.logger.error('WebSocket error occurred', {
+          error: error.message,
+          readyState: this.ws?.readyState,
+          reconnectAttempts: this.reconnectAttempts
+        });
+        
+        // Let the close handler handle reconnection
+        this.cleanup();
+      });
+
+    } catch (error) {
+      this.logger.error('Failed to initialize WebSocket', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        reconnectAttempts: this.reconnectAttempts
+      });
+      this.wsInitializing = false;
+      this.reconnectAttempts++;
+      this.reconnect();
+    }
+  }
+
+  private cleanup() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = undefined;
+    }
+    
+    if (this.ws) {
+      // Remove all listeners to prevent memory leaks
+      this.ws.removeAllListeners();
+      
+      // Close connection if it's still open
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this.ws.close(1000, 'Cleanup initiated');
+      }
+      
+      this.ws = undefined;
+    }
+  }
+
+  private async subscribeToEvents() {
+    try {
+      // Subscribe to contract events
+      this.nftContract.on('BatchMint', async (event: any) => {
+        this.logger.info('BatchMint event received', {
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash
+        });
+        await this.handleEvent(event);
+      });
+
+      this.nftContract.on('Stake', async (event: any) => {
+        this.logger.info('Stake event received', {
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash
+        });
+        await this.handleEvent(event);
+      });
+
+      this.nftContract.on('Unstake', async (event: any) => {
+        this.logger.info('Unstake event received', {
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash
+        });
+        await this.handleEvent(event);
+      });
+
+      this.logger.info('Successfully subscribed to contract events');
+    } catch (error) {
+      this.logger.error('Failed to subscribe to events', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    }
   }
 } 
