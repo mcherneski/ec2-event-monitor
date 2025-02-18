@@ -4,7 +4,7 @@ import { KinesisClient, PutRecordCommand, DescribeStreamCommand, RegisterStreamC
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
 import type { Config } from './types/config.js';
-import type { OnChainEvent } from './types/events.js';
+import type { OnChainEvent, BatchMintEvent, BatchBurnEvent, BatchTransferEvent, StakeEvent, UnstakeEvent } from './types/events.js';
 import { Logger } from './utils/logger.js';
 import { MetricsPublisher } from './utils/metrics.js';
 import { updateMetrics, metrics } from './run.js';
@@ -418,6 +418,141 @@ export class EventListener {
                       eventName,
                       topic: event.topics[0]
                     });
+
+                    // Decode and process the matched event
+                    try {
+                      const decodedEvent = this.nftContract.interface.parseLog({
+                        topics: event.topics,
+                        data: event.data
+                      });
+
+                      if (decodedEvent) {
+                        const processEvent = async () => {
+                          const receipt = await event.getTransactionReceipt();
+                          const block = await event.getBlock();
+
+                          switch (eventName) {
+                            case 'BatchMint': {
+                              const [to, startTokenId, quantity] = decodedEvent.args;
+                              const eventPayload: BatchMintEvent = {
+                                type: 'BatchMint',
+                                to: to.toLowerCase(),
+                                startTokenId: Number(startTokenId),
+                                quantity: Number(quantity),
+                                timestamp: block.timestamp,
+                                transactionHash: event.transactionHash,
+                                blockNumber: receipt.blockNumber,
+                                transactionIndex: receipt.index,
+                                logIndex: event.index.toString(16)
+                              };
+                              await handleBatchMint(eventPayload, this.logger);
+                              await this.handleEvent(eventPayload);
+                            }
+                            break;
+
+                            case 'BatchBurn': {
+                              const [from, startTokenId, quantity] = decodedEvent.args;
+                              const eventPayload: BatchBurnEvent = {
+                                type: 'BatchBurn',
+                                from: from.toLowerCase(),
+                                startTokenId: Number(startTokenId),
+                                quantity: Number(quantity),
+                                timestamp: block.timestamp,
+                                transactionHash: event.transactionHash,
+                                blockNumber: receipt.blockNumber,
+                                transactionIndex: receipt.index,
+                                logIndex: event.index.toString(16)
+                              };
+                              await handleBatchBurn(eventPayload, this.logger);
+                              await this.handleEvent(eventPayload);
+                            }
+                            break;
+
+                            case 'BatchTransfer': {
+                              const [from, to, startTokenId, quantity] = decodedEvent.args;
+                              const eventPayload: BatchTransferEvent = {
+                                type: 'BatchTransfer',
+                                from: from.toLowerCase(),
+                                to: to.toLowerCase(),
+                                startTokenId: Number(startTokenId),
+                                quantity: Number(quantity),
+                                timestamp: block.timestamp,
+                                transactionHash: event.transactionHash,
+                                blockNumber: receipt.blockNumber,
+                                transactionIndex: receipt.index,
+                                logIndex: event.index.toString(16)
+                              };
+                              await handleBatchTransfer(eventPayload, this.logger);
+                              await this.handleEvent(eventPayload);
+                            }
+                            break;
+
+                            case 'Stake': {
+                              const [account, tokenId] = decodedEvent.args;
+                              const eventPayload: StakeEvent = {
+                                type: 'Stake',
+                                account: account.toLowerCase(),
+                                tokenId: Number(tokenId),
+                                timestamp: block.timestamp,
+                                transactionHash: event.transactionHash,
+                                blockNumber: receipt.blockNumber,
+                                transactionIndex: receipt.index,
+                                logIndex: event.index.toString(16)
+                              };
+                              await handleStake(eventPayload, this.logger);
+                              await this.handleEvent(eventPayload);
+                            }
+                            break;
+
+                            case 'Unstake': {
+                              const [account, tokenId] = decodedEvent.args;
+                              const eventPayload: UnstakeEvent = {
+                                type: 'Unstake',
+                                account: account.toLowerCase(),
+                                tokenId: Number(tokenId),
+                                timestamp: block.timestamp,
+                                transactionHash: event.transactionHash,
+                                blockNumber: receipt.blockNumber,
+                                transactionIndex: receipt.index,
+                                logIndex: event.index.toString(16)
+                              };
+                              await handleUnstake(eventPayload, this.logger);
+                              await this.handleEvent(eventPayload);
+                            }
+                            break;
+                          }
+                        };
+
+                        // Execute the async function
+                        processEvent().catch(error => {
+                          this.logger.error('Error processing event', {
+                            error: error instanceof Error ? {
+                              message: error.message,
+                              stack: error.stack
+                            } : error,
+                            eventName,
+                            eventData: {
+                              topics: event.topics,
+                              data: event.data,
+                              address: event.address
+                            }
+                          });
+                        });
+                      }
+                    } catch (error) {
+                      this.logger.error('Error processing decoded event', {
+                        error: error instanceof Error ? {
+                          message: error.message,
+                          stack: error.stack
+                        } : error,
+                        eventName,
+                        eventData: {
+                          topics: event.topics,
+                          data: event.data,
+                          address: event.address
+                        }
+                      });
+                    }
                   } else {
                     this.logger.warn('⚠️ Unknown event topic', {
                       topic: event.topics[0],
