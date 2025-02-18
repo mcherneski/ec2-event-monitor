@@ -111,9 +111,6 @@ Restart=always
 RestartSec=10
 StandardOutput=append:/home/ec2-user/event-monitor/logs/event-monitor.log
 StandardError=append:/home/ec2-user/event-monitor/logs/event-monitor.error.log
-# Prevent systemd from duplicating console output
-StandardOutput=append:/home/ec2-user/event-monitor/logs/event-monitor.log
-StandardError=append:/home/ec2-user/event-monitor/logs/event-monitor.error.log
 SyslogIdentifier=event-monitor
 
 [Install]

@@ -1211,11 +1211,20 @@ export class EventListener {
         this.logger.info('Successfully deregistered consumer on shutdown', {
           consumerId: this.consumerId
         });
-      } catch (error) {
-        this.logger.error('Failed to deregister consumer on shutdown', {
-          consumerId: this.consumerId,
-          error: error instanceof Error ? error.message : error
-        });
+      } catch (error: any) {
+        // If the consumer doesn't exist, that's okay - log as warning
+        if (error.name === 'ResourceNotFoundException' || error.message?.includes('not found')) {
+          this.logger.warn('Consumer already deregistered or not found during shutdown', {
+            consumerId: this.consumerId,
+            error: error instanceof Error ? error.message : error
+          });
+        } else {
+          // For other errors, log as error
+          this.logger.error('Failed to deregister consumer on shutdown', {
+            consumerId: this.consumerId,
+            error: error instanceof Error ? error.message : error
+          });
+        }
       }
     }
   }
