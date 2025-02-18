@@ -409,9 +409,10 @@ export class EventListener {
     }
 
     // NFT Contract Events
-    this.nftContract.on('BatchMint', async (to: string, startTokenId: string | bigint, quantity: string | bigint, event: EventLog) => {
-      const startTokenIdStr = typeof startTokenId === 'string' ? startTokenId : startTokenId.toString();
-      const quantityStr = typeof quantity === 'string' ? quantity : quantity.toString();
+    this.nftContract.on('BatchMint', async (to: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
+      // Convert parameters to strings, handling both bigint and string inputs
+      const startTokenIdStr = startTokenId.toString();
+      const quantityStr = quantity.toString();
       
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchMint event', { 
         startTokenId: startTokenIdStr, 
@@ -454,9 +455,10 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('BatchBurn', async (from: string, startTokenId: string | bigint, quantity: string | bigint, event: EventLog) => {
-      const startTokenIdStr = typeof startTokenId === 'string' ? startTokenId : startTokenId.toString();
-      const quantityStr = typeof quantity === 'string' ? quantity : quantity.toString();
+    this.nftContract.on('BatchBurn', async (from: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
+      // Convert parameters to strings, handling both bigint and string inputs
+      const startTokenIdStr = startTokenId.toString();
+      const quantityStr = quantity.toString();
       
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchBurn event', { 
         startTokenId: startTokenIdStr, 
@@ -499,9 +501,10 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('BatchTransfer', async (from: string, to: string, startTokenId: string | bigint, quantity: string | bigint, event: EventLog) => {
-      const startTokenIdStr = typeof startTokenId === 'string' ? startTokenId : startTokenId.toString();
-      const quantityStr = typeof quantity === 'string' ? quantity : quantity.toString();
+    this.nftContract.on('BatchTransfer', async (from: string, to: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
+      // Convert parameters to strings, handling both bigint and string inputs
+      const startTokenIdStr = startTokenId.toString();
+      const quantityStr = quantity.toString();
       
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchTransfer event', { 
         startTokenId: startTokenIdStr, 
@@ -548,8 +551,9 @@ export class EventListener {
     });
 
     // Add Stake and Unstake event listeners
-    this.nftContract.on('Stake', async (account: string, tokenId: string | bigint, event: EventLog) => {
-      const tokenIdStr = typeof tokenId === 'string' ? tokenId : tokenId.toString();
+    this.nftContract.on('Stake', async (account: string, tokenId: bigint | string, event: EventLog) => {
+      // Convert parameters to strings, handling both bigint and string inputs
+      const tokenIdStr = tokenId.toString();
       
       this.logger.info('📥 WEBSOCKET EVENT: Received Stake event', { 
         tokenId: tokenIdStr,
@@ -589,8 +593,9 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('Unstake', async (account: string, tokenId: string | bigint, event: EventLog) => {
-      const tokenIdStr = typeof tokenId === 'string' ? tokenId : tokenId.toString();
+    this.nftContract.on('Unstake', async (account: string, tokenId: bigint | string, event: EventLog) => {
+      // Convert parameters to strings, handling both bigint and string inputs
+      const tokenIdStr = tokenId.toString();
       
       this.logger.info('📥 WEBSOCKET EVENT: Received Unstake event', { 
         tokenId: tokenIdStr,
