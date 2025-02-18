@@ -450,18 +450,11 @@ export class EventListener {
                                 transactionIndex: receipt.index,
                                 logIndex: event.index.toString(16)
                               };
-                              this.logger.info('🔍 DEBUG: Created BatchMint event payload, about to call handler', {
+                              this.logger.info('🔍 DEBUG: Created BatchMint event payload, about to process', {
                                 payload: eventPayload
                               });
-                              await handleBatchMint(eventPayload, this.logger);
-                              this.logger.info('🔍 DEBUG: BatchMint handler completed');
-                              this.logger.info('🔄 FLOW: About to call handleEvent', {
-                                eventId: `${eventPayload.blockNumber}-${eventPayload.transactionHash}-${eventPayload.logIndex}`,
-                                blockNumber: eventPayload.blockNumber,
-                                transactionHash: eventPayload.transactionHash
-                              });
                               await this.handleEvent(eventPayload);
-                              this.logger.info('🔍 DEBUG: handleEvent completed for BatchMint');
+                              this.logger.info('🔍 DEBUG: BatchMint event processing completed');
                             }
                             break;
 
