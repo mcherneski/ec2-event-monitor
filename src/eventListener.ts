@@ -14,11 +14,11 @@ import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
-  'event BatchMint(address to, uint256 startTokenId, uint256 quantity)',
-  'event BatchBurn(address from, uint256 startTokenId, uint256 quantity)',
-  'event BatchTransfer(address from, address to, uint256 startTokenId, uint256 quantity)',
-  'event Stake(address account, uint256 tokenId)',
-  'event Unstake(address account, uint256 tokenId)'
+  'event BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)',
+  'event BatchBurn(address indexed from, uint256 startTokenId, uint256 quantity)',
+  'event BatchTransfer(address indexed from, address indexed to, uint256 startTokenId, uint256 quantity)',
+  'event Stake(address indexed account, uint256 tokenId)',
+  'event Unstake(address indexed account, uint256 tokenId)'
 ];
 // Old events that worked - just in case. 
 // 'event BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)',
