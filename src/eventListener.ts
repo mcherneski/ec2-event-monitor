@@ -7,23 +7,22 @@ import { Logger } from './utils/logger.js';
 import { MetricsPublisher } from './utils/metrics.js';
 import { updateMetrics, metrics } from './run.js';
 import * as ethers from 'ethers';
+import * as DynamoDB from 'aws-sdk/clients/dynamodb';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
-  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId, uint256 id)',
-  'event Burn(address indexed from, uint256 indexed tokenId, uint256 id)',
-  'event Mint(address indexed to, uint256 indexed tokenId, uint256 id)',
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId, bool nft)',
+  'event Mint(address indexed to, uint256 indexed id)',
   'event Staked(address indexed staker, uint256 tokenId, uint256 indexed id)',
   'event Unstaked(address indexed staker, uint256 tokenId, uint256 indexed id)'
 ];
 
 // Known signatures from the contract for validation
 const KNOWN_SIGNATURES = {
-  Transfer: '0x9ed053bb818ff08b8353cd46f78db1f0799f31c9e4458fdb425c10eccd2efc44',
-  Burn: '0x49995e5dd6158cf69ad3e9777c46755a1a826a446c6416992167462dad033b2a',
-  Mint: '0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03821c4f',
-  Staked: '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
-  Unstaked: '0x7fc4727e062e336010f2c282598ef5f14facb3de68cf8195c2f23e1454b2b74e'
+  Transfer: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+  Mint: '0x0f6798a560c37ff944517b6dab7f8b08c6e54f4f1591c3f584df4140d08a1cff',
+  Staked: '0x5a7381b9ecd2c9e03819adb90a47c89078658d9d6c8e6e9fb7e5f58aa0a4f85f',
+  Unstaked: '0x85082129d87b2fe11527cb1b3b7a520aeb5aa6913f88a3d8757fe40d1db02fdd'
 };
 
 // Function to compute and verify event signatures
@@ -59,6 +58,7 @@ export class EventListener {
   private metrics: MetricsPublisher;
   private logger: Logger;
   private config: Config;
+  private dynamoDb: DynamoDB.DocumentClient;
   private reconnectAttempts: number = 0;
   private heartbeatInterval?: NodeJS.Timeout;
   private consumerId?: string;
@@ -72,6 +72,7 @@ export class EventListener {
   constructor(config: Config) {
     this.config = config;
     this.logger = new Logger('EventListener');
+    this.dynamoDb = new DynamoDB.DocumentClient();
     
     try {
       this.logger.info('Starting event listener with config', {
@@ -270,7 +271,7 @@ export class EventListener {
       });
 
       // Create and verify filters for each event type
-      const eventTypes = ['Transfer', 'Mint', 'Burn', 'Staked', 'Unstaked'];
+      const eventTypes = ['Transfer', 'Mint', 'Staked', 'Unstaked'];
       for (const eventType of eventTypes) {
         try {
           const filter = this.nftContract.filters[eventType]();
@@ -410,9 +411,9 @@ export class EventListener {
     }
 
     // NFT Contract Events
-    this.nftContract.on('Mint', async (to, tokenId, id, event) => {
+    this.nftContract.on('Mint', async (to, id, event) => {
       this.logger.info('📥 WEBSOCKET EVENT: Received Mint event', { 
-        tokenId: tokenId.toString(), 
+        id: id.toString(), 
         to: to.toLowerCase(),
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber
@@ -433,13 +434,13 @@ export class EventListener {
           hash: block.hash
         });
         
-        // Convert tokenId to hex string with proper padding
-        const tokenIdHex = ethers.toBeHex(tokenId, 32);
+        // Convert id to hex string with proper padding
+        const idHex = ethers.toBeHex(id, 32);
         
-        // Find the Mint event log by matching the signature and tokenId
+        // Find the Mint event log by matching the signature and id
         const mintEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
           log.topics[0] === KNOWN_SIGNATURES.Mint && 
-          log.topics[2] === tokenIdHex
+          log.topics[2] === idHex
         );
 
         if (!mintEventLog) {
@@ -451,8 +452,7 @@ export class EventListener {
         const eventPayload: OnChainEvent = {
           type: 'Mint',
           to: to.toLowerCase(),
-          tokenId: tokenId.toString(),
-          id: typeof id === 'bigint' ? id.toString() : id,
+          id: id.toString(),
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -462,7 +462,7 @@ export class EventListener {
 
         this.logger.info('📦 PROCESSING: Created event payload', {
           type: 'Mint',
-          tokenId: tokenId.toString(),
+          id: id.toString(),
           blockNumber: receipt.blockNumber,
           transactionHash: event.transactionHash
         });
@@ -477,8 +477,7 @@ export class EventListener {
           } : error,
           eventData: {
             to, 
-            tokenId: tokenId.toString(), 
-            id: typeof id === 'bigint' ? id.toString() : id,
+            id: id.toString(),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -487,8 +486,13 @@ export class EventListener {
     });
 
     // NFT Contract Transfer Event
-    this.nftContract.on('Transfer', async (from, to, tokenId, id, event) => {
-      this.logger.info('Received Transfer event', { tokenId: tokenId.toString(), from: from.toLowerCase(), to: to.toLowerCase() });
+    this.nftContract.on('Transfer', async (from, to, tokenId, nft, event) => {
+      this.logger.info('Received Transfer event', { 
+        tokenId: tokenId.toString(), 
+        from: from.toLowerCase(), 
+        to: to.toLowerCase(),
+        nft
+      });
       try {
         const block = await event.getBlock();
         const receipt = await event.getTransactionReceipt();
@@ -524,7 +528,7 @@ export class EventListener {
             type: toStaking ? 'Staked' as const : 'Unstaked' as const,
             staker: toStaking ? from.toLowerCase() : to.toLowerCase(),
             tokenId: tokenId.toString(),
-            id: typeof id === 'bigint' ? Number(id) : id,
+            id: tokenId.toString(),
             timestamp: block.timestamp,
             transactionHash: event.transactionHash,
             blockNumber: event.blockNumber,
@@ -542,7 +546,7 @@ export class EventListener {
           from: from.toLowerCase(),
           to: to.toLowerCase(),
           tokenId: tokenId.toString(),
-          id: typeof id === 'bigint' ? Number(id) : id,
+          nft,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: event.blockNumber,
@@ -556,55 +560,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            from, to, tokenId: tokenId.toString(), id: typeof id === 'bigint' ? id.toString() : id,
-            blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
-          }
-        });
-      }
-    });
-
-    // NFT Contract Burn Event
-    this.nftContract.on('Burn', async (from, tokenId, id, event) => {
-      this.logger.info('Received Burn event', { tokenId: tokenId.toString(), from: from.toLowerCase() });
-      try {
-        const block = await event.getBlock();
-        const receipt = await event.getTransactionReceipt();
-        
-        // Convert tokenId to hex string with proper padding
-        const tokenIdHex = ethers.toBeHex(tokenId, 32);
-        
-        // Find the Burn event log by matching the signature and tokenId
-        const burnEventLog = receipt.logs.find((log: { topics: string[]; index: number }) => 
-          log.topics[0] === KNOWN_SIGNATURES.Burn && 
-          log.topics[2] === tokenIdHex
-        );
-
-        if (!burnEventLog) {
-          throw new Error('Could not find Burn event log in transaction receipt');
-        }
-
-        const logIndex = burnEventLog.index;
-
-        await this.handleEvent({
-          type: 'Burn',
-          from: from.toLowerCase(),
-          tokenId: tokenId.toString(),
-          id: typeof id === 'bigint' ? id.toString() : id,
-          timestamp: block.timestamp,
-          transactionHash: event.transactionHash,
-          blockNumber: event.blockNumber,
-          transactionIndex: event.transactionIndex,
-          logIndex: logIndex.toString(16)  // Convert to hex string
-        });
-      } catch (error) {
-        this.logger.error('Error in Burn event handler', {
-          error: error instanceof Error ? {
-            message: error.message,
-            stack: error.stack
-          } : error,
-          eventData: {
-            from, tokenId: tokenId.toString(), id: typeof id === 'bigint' ? id.toString() : id,
+            from, to, tokenId: tokenId.toString(), nft,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -703,9 +659,15 @@ export class EventListener {
       });
       
       const data = Buffer.from(JSON.stringify(event));
+      
+      // Generate a unique partition key using available data
+      const partitionKey = event.id 
+        ? `${event.type}-${event.id.toString()}`
+        : `${event.type}-${event.tokenId}-${event.transactionHash}`;
+
       const command = new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
-        PartitionKey: `${event.type}-${event.id.toString()}`,
+        PartitionKey: partitionKey,
         Data: data
       });
 
@@ -727,7 +689,7 @@ export class EventListener {
         blockNumber: event.blockNumber,
         timestamp: new Date().toISOString(),
         streamName: this.config.kinesisStreamName,
-        partitionKey: `${event.type}-${event.id.toString()}`
+        partitionKey
       });
 
       // Update Kinesis metrics
@@ -736,6 +698,36 @@ export class EventListener {
         batchesSent: metrics.kinesis.batchesSent + 1,
         lastBatchTime: Date.now()
       });
+
+      // Add handling for FeastReady event
+      if (event.type === 'FeastReady' && event.data) {
+        const totalPoolAmount = BigInt(event.data);
+        
+        // Update DynamoDB table with new pool amount
+        const params = {
+          TableName: process.env.FEAST_POOL_TABLE!,
+          Key: {
+            id: 'current_pool'
+          },
+          UpdateExpression: 'ADD poolAmount :amount',
+          ExpressionAttributeValues: {
+            ':amount': totalPoolAmount.toString()
+          }
+        };
+
+        try {
+          await this.dynamoDb.update(params).promise();
+          this.logger.info('Updated feast pool amount', { totalPoolAmount: totalPoolAmount.toString() });
+        } catch (error) {
+          this.logger.error('Error updating feast pool amount:', error);
+          throw error;
+        }
+      }
+
+      // Handle other events with proper type checks
+      if (event.type === 'Transfer' || event.type === 'Mint' || event.type === 'Staked' || event.type === 'Unstaked') {
+        // Process the event...
+      }
 
     } catch (error) {
       this.logger.error('❌ KINESIS: Failed to send event', { 
