@@ -18,6 +18,8 @@ export const metrics = {
     batchTransfer: 0,
     batchMint: 0,
     batchBurn: 0,
+    stake: 0,
+    unstake: 0,
     errors: 0,
     lastEventTime: Date.now()
   },
@@ -43,7 +45,7 @@ export const metrics = {
 };
 
 export const updateMetrics = {
-  incrementEvent: (type: 'batchTransfer' | 'batchMint' | 'batchBurn' | 'errors') => {
+  incrementEvent: (type: 'batchTransfer' | 'batchMint' | 'batchBurn' | 'stake' | 'unstake' | 'errors') => {
     metrics.events[type]++;
     metrics.events.total++;
     metrics.events.lastEventTime = Date.now();

@@ -694,15 +694,36 @@ export class EventListener {
 
   private async handleEvent(event: OnChainEvent) {
     try {
+      // Create a unique event identifier for deduplication
+      const eventId = `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`;
+      
       this.logger.info('📤 KINESIS: Starting event processing', {
         eventType: event.type,
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber,
-        tokenId: event.tokenId
+        tokenId: event.tokenId,
+        eventId
       });
 
+      // Check DynamoDB for duplicate event
+      const checkDuplicate = await this.dynamoDb.get({
+        TableName: `${this.config.kinesisStreamName}-events`,
+        Key: {
+          eventId: eventId
+        }
+      }).promise();
+
+      if (checkDuplicate.Item) {
+        this.logger.info('🔄 KINESIS: Duplicate event detected, skipping', {
+          eventId,
+          eventType: event.type,
+          transactionHash: event.transactionHash
+        });
+        return;
+      }
+
       // Update event metrics based on type
-      updateMetrics.incrementEvent(event.type.toLowerCase() as 'batchTransfer' | 'batchMint' | 'batchBurn' | 'errors');
+      updateMetrics.incrementEvent(event.type.toLowerCase() as 'batchTransfer' | 'batchMint' | 'batchBurn' | 'stake' | 'unstake' | 'errors');
       this.logger.info('📊 METRICS: Updated for event type', {
         eventType: event.type,
         metricsUpdated: true
@@ -716,19 +737,6 @@ export class EventListener {
       
       const data = Buffer.from(JSON.stringify(event));
       
-      // Create a queue ordering that includes blockNumber, transactionIndex, and modified tokenId
-      // Format: <blockNumber><transactionIndex><modifiedTokenId>
-      // blockNumber: 9 digits (supports ~1 billion blocks)
-      // transactionIndex: 6 digits (supports up to 999,999 transactions per block)
-      // modifiedTokenId: 6 digits with special handling:
-      //   - Unstaked tokens: negative number to ensure front of queue
-      //   - Purchased/Transferred tokens: positive number (back of queue)
-      //   - Staked/Burned tokens: removed from queue entirely
-      const tokenIdStr = event.tokenId.toString();
-      const last6Digits = tokenIdStr.length > 6 
-        ? tokenIdStr.slice(-6)  // Take last 6 digits for long numbers
-        : tokenIdStr.padStart(6, '0');  // Pad with leading zeros for short numbers
-
       // Calculate queue position based on event type
       const queueOrder = (() => {
         const blockPart = event.blockNumber.toString().padStart(9, '0');
@@ -738,13 +746,16 @@ export class EventListener {
           case 'Unstake':
             // For unstaked tokens, use negative numbers to ensure front of queue
             // Calculate a negative position that maintains order but is always at front
-            const tokenNum = parseInt(tokenIdStr);
+            const tokenNum = parseInt(event.tokenId);
             const negativePosition = (-999999 + (tokenNum % 999999)).toString().padStart(6, '0');
             return `${blockPart}${txPart}-${negativePosition}`;
             
           case 'BatchTransfer':
           case 'BatchMint':
             // For purchases/transfers, use positive numbers (back of queue)
+            const last6Digits = event.tokenId.length > 6 
+              ? event.tokenId.slice(-6)
+              : event.tokenId.padStart(6, '0');
             return `${blockPart}${txPart}${last6Digits}`;
             
           case 'Stake':
@@ -754,7 +765,10 @@ export class EventListener {
           case 'BatchBurn':
             // For burned tokens, they'll be removed from queue in DB layer
             // Still need a valid queue number for event ordering
-            return `${blockPart}${txPart}${last6Digits}`;
+            const burnLast6Digits = event.tokenId.length > 6 
+              ? event.tokenId.slice(-6)
+              : event.tokenId.padStart(6, '0');
+            return `${blockPart}${txPart}${burnLast6Digits}`;
         }
       })();
       
@@ -765,13 +779,17 @@ export class EventListener {
           case 'BatchBurn':
           case 'BatchTransfer':
             return `${event.type}-${event.startTokenId}-${event.transactionHash}-${queueOrder}`;
+          case 'Stake':
+          case 'Unstake':
+            return `${event.type}-${event.tokenId}-${event.transactionHash}-${queueOrder}`;
         }
       })();
 
       // Only include queueOrder in enriched event if it's not empty
       const enrichedEvent = {
         ...event,
-        ...(queueOrder && { queueOrder })
+        ...(queueOrder && { queueOrder }),
+        eventId
       };
 
       const command = new PutRecordCommand({
@@ -785,10 +803,21 @@ export class EventListener {
         eventType: event.type,
         transactionHash: event.transactionHash,
         queueOrder,
+        eventId,
         dataSize: data.length
       });
 
       const result = await this.kinesis.send(command);
+
+      // Store event ID in DynamoDB for deduplication
+      await this.dynamoDb.put({
+        TableName: `${this.config.kinesisStreamName}-events`,
+        Item: {
+          eventId: eventId,
+          timestamp: Date.now(),
+          ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
+        }
+      }).promise();
 
       // Log success with type-safe event properties
       const logData = {
@@ -800,7 +829,8 @@ export class EventListener {
         timestamp: new Date().toISOString(),
         streamName: this.config.kinesisStreamName,
         partitionKey,
-        queueOrder
+        queueOrder,
+        eventId
       };
 
       // Add type-specific properties to log data
@@ -820,11 +850,6 @@ export class EventListener {
         batchesSent: metrics.kinesis.batchesSent + 1,
         lastBatchTime: Date.now()
       });
-
-      // Handle events with proper type checks
-      if (event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer') {
-        // Process the event...
-      }
 
     } catch (error) {
       this.logger.error('❌ KINESIS: Failed to send event', { 
@@ -1217,7 +1242,7 @@ export class EventListener {
     }
   }
 
-  async stop() {
+  public async stop(): Promise<void> {
     this.logger.info('Stopping event listener');
     
     // Clean up consumer before stopping
