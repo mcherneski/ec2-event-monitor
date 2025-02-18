@@ -409,10 +409,13 @@ export class EventListener {
     }
 
     // NFT Contract Events
-    this.nftContract.on('BatchMint', async (to: string, startTokenId: bigint, quantity: bigint, event: EventLog) => {
+    this.nftContract.on('BatchMint', async (to: string, startTokenId: string | bigint, quantity: string | bigint, event: EventLog) => {
+      const startTokenIdStr = typeof startTokenId === 'string' ? startTokenId : startTokenId.toString();
+      const quantityStr = typeof quantity === 'string' ? quantity : quantity.toString();
+      
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchMint event', { 
-        startTokenId: startTokenId.toString(), 
-        quantity: quantity.toString(),
+        startTokenId: startTokenIdStr, 
+        quantity: quantityStr,
         to: to.toLowerCase(),
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber
@@ -424,8 +427,8 @@ export class EventListener {
         const eventPayload: OnChainEvent = {
           type: 'BatchMint',
           to: to.toLowerCase(),
-          startTokenId: startTokenId.toString(),
-          quantity: quantity.toString(),
+          startTokenId: startTokenIdStr,
+          quantity: quantityStr,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -442,8 +445,8 @@ export class EventListener {
           } : error,
           eventData: {
             to, 
-            startTokenId: startTokenId.toString(),
-            quantity: quantity.toString(),
+            startTokenId: startTokenIdStr,
+            quantity: quantityStr,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -451,10 +454,13 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('BatchBurn', async (from: string, startTokenId: bigint, quantity: bigint, event: EventLog) => {
+    this.nftContract.on('BatchBurn', async (from: string, startTokenId: string | bigint, quantity: string | bigint, event: EventLog) => {
+      const startTokenIdStr = typeof startTokenId === 'string' ? startTokenId : startTokenId.toString();
+      const quantityStr = typeof quantity === 'string' ? quantity : quantity.toString();
+      
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchBurn event', { 
-        startTokenId: startTokenId.toString(), 
-        quantity: quantity.toString(),
+        startTokenId: startTokenIdStr, 
+        quantity: quantityStr,
         from: from.toLowerCase(),
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber
@@ -466,8 +472,8 @@ export class EventListener {
         const eventPayload: OnChainEvent = {
           type: 'BatchBurn',
           from: from.toLowerCase(),
-          startTokenId: startTokenId.toString(),
-          quantity: quantity.toString(),
+          startTokenId: startTokenIdStr,
+          quantity: quantityStr,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -484,8 +490,8 @@ export class EventListener {
           } : error,
           eventData: {
             from,
-            startTokenId: startTokenId.toString(),
-            quantity: quantity.toString(),
+            startTokenId: startTokenIdStr,
+            quantity: quantityStr,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -493,10 +499,13 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('BatchTransfer', async (from: string, to: string, startTokenId: bigint, quantity: bigint, event: EventLog) => {
+    this.nftContract.on('BatchTransfer', async (from: string, to: string, startTokenId: string | bigint, quantity: string | bigint, event: EventLog) => {
+      const startTokenIdStr = typeof startTokenId === 'string' ? startTokenId : startTokenId.toString();
+      const quantityStr = typeof quantity === 'string' ? quantity : quantity.toString();
+      
       this.logger.info('📥 WEBSOCKET EVENT: Received BatchTransfer event', { 
-        startTokenId: startTokenId.toString(), 
-        quantity: quantity.toString(),
+        startTokenId: startTokenIdStr, 
+        quantity: quantityStr,
         from: from.toLowerCase(),
         to: to.toLowerCase(),
         transactionHash: event.transactionHash,
@@ -510,8 +519,8 @@ export class EventListener {
           type: 'BatchTransfer',
           from: from.toLowerCase(),
           to: to.toLowerCase(),
-          startTokenId: startTokenId.toString(),
-          quantity: quantity.toString(),
+          startTokenId: startTokenIdStr,
+          quantity: quantityStr,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -529,8 +538,8 @@ export class EventListener {
           eventData: {
             from,
             to,
-            startTokenId: startTokenId.toString(),
-            quantity: quantity.toString(),
+            startTokenId: startTokenIdStr,
+            quantity: quantityStr,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -539,29 +548,31 @@ export class EventListener {
     });
 
     // Add Stake and Unstake event listeners
-    this.nftContract.on('Stake', async (account: string, tokenId: bigint, event: EventLog) => {
-      const eventId = `${event.blockNumber}-${event.transactionHash}-${event.index.toString(16)}`;
+    this.nftContract.on('Stake', async (account: string, tokenId: string | bigint, event: EventLog) => {
+      const tokenIdStr = typeof tokenId === 'string' ? tokenId : tokenId.toString();
+      
       this.logger.info('📥 WEBSOCKET EVENT: Received Stake event', { 
-        tokenId: tokenId.toString(),
+        tokenId: tokenIdStr,
         account: account.toLowerCase(),
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber,
-        eventId
+        blockNumber: event.blockNumber
       });
       try {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
-        await this.handleEvent({
+        const eventPayload: OnChainEvent = {
           type: 'Stake',
           account: account.toLowerCase(),
-          tokenId: tokenId.toString(),
+          tokenId: tokenIdStr,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
           transactionIndex: receipt.index,
           logIndex: event.index.toString(16)
-        });
+        };
+        
+        await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process Stake event', {
           error: error instanceof Error ? {
@@ -569,8 +580,8 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            account: account.toLowerCase(), 
-            tokenId: tokenId.toString(),
+            account,
+            tokenId: tokenIdStr,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -578,9 +589,11 @@ export class EventListener {
       }
     });
 
-    this.nftContract.on('Unstake', async (account: string, tokenId: bigint, event: EventLog) => {
+    this.nftContract.on('Unstake', async (account: string, tokenId: string | bigint, event: EventLog) => {
+      const tokenIdStr = typeof tokenId === 'string' ? tokenId : tokenId.toString();
+      
       this.logger.info('📥 WEBSOCKET EVENT: Received Unstake event', { 
-        tokenId: tokenId.toString(),
+        tokenId: tokenIdStr,
         account: account.toLowerCase(),
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber
@@ -592,7 +605,7 @@ export class EventListener {
         const eventPayload: OnChainEvent = {
           type: 'Unstake',
           account: account.toLowerCase(),
-          tokenId: tokenId.toString(),
+          tokenId: tokenIdStr,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -608,8 +621,8 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            account: account.toLowerCase(),
-            tokenId: tokenId.toString(),
+            account,
+            tokenId: tokenIdStr,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -1246,7 +1259,6 @@ export class EventListener {
       }
     }
   }
-
   public async stop(): Promise<void> {
     this.logger.info('Stopping event listener');
     
