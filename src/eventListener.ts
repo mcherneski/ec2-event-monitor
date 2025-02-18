@@ -661,9 +661,17 @@ export class EventListener {
       const data = Buffer.from(JSON.stringify(event));
       
       // Generate a unique partition key using available data
-      const partitionKey = event.id 
-        ? `${event.type}-${event.id.toString()}`
-        : `${event.type}-${event.tokenId}-${event.transactionHash}`;
+      const partitionKey = (() => {
+        switch (event.type) {
+          case 'Mint':
+            return `${event.type}-${event.id}`;
+          case 'Transfer':
+            return `${event.type}-${event.tokenId}-${event.transactionHash}`;
+          case 'Staked':
+          case 'Unstaked':
+            return `${event.type}-${event.tokenId}-${event.transactionHash}`;
+        }
+      })();
 
       const command = new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
@@ -680,9 +688,9 @@ export class EventListener {
 
       const result = await this.kinesis.send(command);
 
-      this.logger.info('✅ KINESIS: Event sent successfully', {
+      // Log success with type-safe event properties
+      const logData = {
         eventType: event.type,
-        tokenId: event.tokenId,
         shardId: result.ShardId,
         sequenceNumber: result.SequenceNumber,
         transactionHash: event.transactionHash,
@@ -690,7 +698,17 @@ export class EventListener {
         timestamp: new Date().toISOString(),
         streamName: this.config.kinesisStreamName,
         partitionKey
-      });
+      };
+
+      // Add type-specific properties to log data
+      if (event.type === 'Transfer' || event.type === 'Staked' || event.type === 'Unstaked') {
+        Object.assign(logData, { tokenId: event.tokenId });
+      }
+      if (event.type === 'Mint') {
+        Object.assign(logData, { id: event.id });
+      }
+
+      this.logger.info('✅ KINESIS: Event sent successfully', logData);
 
       // Update Kinesis metrics
       updateMetrics.updateKinesis({
@@ -699,32 +717,7 @@ export class EventListener {
         lastBatchTime: Date.now()
       });
 
-      // Add handling for FeastReady event
-      if (event.type === 'FeastReady' && event.data) {
-        const totalPoolAmount = BigInt(event.data);
-        
-        // Update DynamoDB table with new pool amount
-        const params = {
-          TableName: process.env.FEAST_POOL_TABLE!,
-          Key: {
-            id: 'current_pool'
-          },
-          UpdateExpression: 'ADD poolAmount :amount',
-          ExpressionAttributeValues: {
-            ':amount': totalPoolAmount.toString()
-          }
-        };
-
-        try {
-          await this.dynamoDb.update(params).promise();
-          this.logger.info('Updated feast pool amount', { totalPoolAmount: totalPoolAmount.toString() });
-        } catch (error) {
-          this.logger.error('Error updating feast pool amount:', error);
-          throw error;
-        }
-      }
-
-      // Handle other events with proper type checks
+      // Handle events with proper type checks
       if (event.type === 'Transfer' || event.type === 'Mint' || event.type === 'Staked' || event.type === 'Unstaked') {
         // Process the event...
       }
