@@ -18,8 +18,7 @@ const EVENT_ABIS = [
   'event BatchBurn(address from, uint256 startTokenId, uint256 quantity)',
   'event BatchTransfer(address from, address to, uint256 startTokenId, uint256 quantity)',
   'event Stake(address account, uint256 tokenId)',
-  'event Unstake(address account, uint256 tokenId)',
-  'event Transfer(address indexed from, address indexed to, uint256 value)'
+  'event Unstake(address account, uint256 tokenId)'
 ];
 // Old events that worked - just in case. 
 // 'event BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)',
@@ -36,9 +35,11 @@ const KNOWN_SIGNATURES = {
   BatchBurn: '0xc72888b04eef48850058b96e06db799bbca4b5511d5bd54d375af532446c7496',
   BatchTransfer: '0xe33fa6b1dc0e64c45482249b300e8b7a8c335905802467c723315913c6ff3911',
   Stake: '0x449a52f80565d07a38a3ae3a9ca18db7e54d645a1e6a4a89a2320e8c907eab3c',
-  Unstake: '0x1381d2e30e0666d3e48b8a3c81e3c1f8f95c5bf76b4d6c0d2c5f63e742dbd1c5',
-  Transfer: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+  Unstake: '0x1381d2e30e0666d3e48b8a3c81e3c1f8f95c5bf76b4d6c0d2c5f63e742dbd1c5'
 };
+
+// ERC20 Transfer event signature - used to identify and ignore this event
+const ERC20_TRANSFER_SIGNATURE = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
 // Function to compute and verify event signatures
 function computeEventSignatures() {
@@ -400,6 +401,14 @@ export class EventListener {
                   });
                   
                 } else if (event.topics?.[0]) {
+                  // Skip ERC20 Transfer events
+                  if (event.topics[0] === ERC20_TRANSFER_SIGNATURE) {
+                    this.logger.info('Skipping ERC20 Transfer event', {
+                      topic: event.topics[0]
+                    });
+                    return acc;
+                  }
+                  
                   // Try to match the topic signature
                   const matchedEvent = Object.entries(KNOWN_SIGNATURES)
                     .find(([_, sig]) => sig === event.topics[0]);
