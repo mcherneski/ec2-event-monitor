@@ -11,20 +11,20 @@ import AWS from 'aws-sdk';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
-  'event BatchMint(address,uint256,uint256)',
-  'event BatchBurn(address,uint256,uint256)',
-  'event BatchTransfer(address,address,uint256,uint256)',
-  'event Stake(address,uint256)',
-  'event Unstake(address,uint256)'
+  'event BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)',
+  'event BatchBurn(address indexed from, uint256 startTokenId, uint256 quantity)',
+  'event BatchTransfer(address indexed from, address indexed to, uint256[] tokenIds)',
+  'event Stake(address indexed account, uint256 tokenId)',
+  'event Unstake(address indexed account, uint256 tokenId)'
 ];
 
 // Known signatures from the contract for validation
 const KNOWN_SIGNATURES = {
   BatchMint: '0x63232c37f2c1fdcb4fc657df1cef6cabc7181c5b604530242590ffe5fa91ab74',
   BatchBurn: '0xc72888b04eef48850058b96e06db799bbca4b5511d5bd54d375af532446c7496',
-  BatchTransfer: '0xe33fa6b1dc0e64c45482249b300e8b7a8c335905802467c723315913c6ff3911',
-  Stake: '0xebedb8b3c678666e7f36970bc8f57abf6d8fa2e828c0da91ea5b75bf68ed101a',
-  Unstake: '0x85082129d87b2fe11527cb1b3b7a520aeb5aa6913f88a3d8757fe40d1db02fdd'
+  BatchTransfer: '0x7d85d6b5c6c9a5b7f36a6d1a5d76c71f44c8a24e3e0b03f9d0fd76520fac7db1',
+  Stake: '0x449a52f80565d07a38a3ae3a9ca18db7e54d645a1e6a4a89a2320e8c907eab3c',
+  Unstake: '0x1381d2e30e0666d3e48b8a3c81e3c1f8f95c5bf76b4d6c0d2c5f63e742dbd1c5'
 };
 
 // Function to compute and verify event signatures
