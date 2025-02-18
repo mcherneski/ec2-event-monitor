@@ -397,8 +397,8 @@ export class EventListener {
 
             // Only log if we found known events
             const knownEvents = Object.keys(eventCounts).filter(name => name !== 'unknown');
-            if (knownEvents.length > 0) {
-              this.logger.info('📥 WEBSOCKET: Received blockchain events', { 
+            if (knownEvents.length > 1) {
+              this.logger.info('📥 WEBSOCKET: Multiple events in block', { 
                 blockNumber,
                 timestamp: block.timestamp,
                 events: knownEvents.map(name => ({
@@ -437,13 +437,37 @@ export class EventListener {
     // NFT Contract Events
     this.nftContract.on('BatchMint', async (to: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
       try {
+        this.logger.info('🔍 DEBUG: Raw BatchMint event received', {
+          to,
+          startTokenId: startTokenId.toString(),
+          quantity: quantity.toString(),
+          eventObject: {
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash,
+            logIndex: event.index
+          }
+        });
+
         // Convert bigint values to numbers
         const startTokenIdNum = typeof startTokenId === 'bigint' ? Number(startTokenId) : Number(startTokenId);
         const quantityNum = typeof quantity === 'bigint' ? Number(quantity) : Number(quantity);
         
+        this.logger.info('🔍 DEBUG: Getting transaction receipt');
         const receipt = await event.getTransactionReceipt();
+        
+        this.logger.info('🔍 DEBUG: Getting block');
         const block = await event.getBlock();
         
+        this.logger.info('🔍 DEBUG: Creating event payload', {
+          receipt: {
+            blockNumber: receipt.blockNumber,
+            transactionIndex: receipt.index
+          },
+          block: {
+            timestamp: block.timestamp
+          }
+        });
+
         const eventPayload: OnChainEvent = {
           type: 'BatchMint',
           to: to.toLowerCase(),
@@ -456,18 +480,26 @@ export class EventListener {
           logIndex: event.index.toString(16)
         };
         
+        this.logger.info('🔍 DEBUG: Calling handleBatchMint');
         await handleBatchMint(eventPayload, this.logger);
+        
+        this.logger.info('🔍 DEBUG: Calling handleEvent');
         await this.handleEvent(eventPayload);
+        
+        this.logger.info('✅ BatchMint event processing completed successfully', {
+          eventPayload
+        });
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process BatchMint event', {
           error: error instanceof Error ? {
             message: error.message,
+            name: error.name,
             stack: error.stack
           } : error,
           eventData: {
             to,
-            startTokenId: typeof startTokenId === 'bigint' ? Number(startTokenId) : Number(startTokenId),
-            quantity: typeof quantity === 'bigint' ? Number(quantity) : Number(quantity),
+            startTokenId: typeof startTokenId === 'bigint' ? startTokenId.toString() : startTokenId,
+            quantity: typeof quantity === 'bigint' ? quantity.toString() : quantity,
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
