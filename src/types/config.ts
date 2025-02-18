@@ -7,7 +7,6 @@ export interface Config {
   port: number;
   wsRpcUrl: string;
   nftContractAddress: string;
-  stakingContractAddress: string;
   kinesisStreamName: string;
   awsRegion: string;
   environment: string;
@@ -54,24 +53,26 @@ export const getConfig = async (): Promise<Config> => {
     // Fetch SSM parameters
     logger.info('Starting to fetch SSM parameters', { stage });
     
-    const parameterPaths = [
+    const parameterPaths = stage === 'prod' ? [
+      `/ngu-points-system-v2/${stage}/PROD_NFT_CONTRACT_ADDRESS`,
+      `/ngu-points-system-v2/${stage}/PROD_WS_RPC_URL`,
+      `/ngu-points-system-v2/${stage}/KINESIS_STREAM_NAME`
+    ] : [
       `/ngu-points-system-v2/${stage}/STAGING_NFT_CONTRACT_ADDRESS`,
-      `/ngu-points-system-v2/${stage}/STAGING_STAKING_CONTRACT_ADDRESS`,
       `/ngu-points-system-v2/${stage}/STAGING_WS_RPC_URL`,
       `/ngu-points-system-v2/${stage}/KINESIS_STREAM_NAME`
     ];
 
     logger.info('Fetching parameters', { paths: parameterPaths });
 
-    const [nftContractAddress, stakingContractAddress, wsRpcUrl, kinesisStreamName] = await Promise.all(
+    const values = await Promise.all(
       parameterPaths.map(path => getSSMParameter(path))
     );
 
     const config = {
-      nftContractAddress,
-      stakingContractAddress,
-      wsRpcUrl,
-      kinesisStreamName: kinesisStreamName || `ngu-points-system-v2-events-${stage}`,
+      nftContractAddress: values[0],
+      wsRpcUrl: values[1],
+      kinesisStreamName: values[2],
       awsRegion: process.env.AWS_REGION!,
       awsAccountId: process.env.AWS_ACCOUNT_ID!,
       port: parseInt(process.env.PORT || '3000'),

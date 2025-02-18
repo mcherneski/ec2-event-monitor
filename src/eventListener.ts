@@ -13,14 +13,18 @@ import AWS from 'aws-sdk';
 const EVENT_ABIS = [
   'event BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)',
   'event BatchBurn(address indexed from, uint256 startTokenId, uint256 quantity)',
-  'event BatchTransfer(address indexed from, address indexed to, uint256 startTokenId, uint256 quantity)'
+  'event BatchTransfer(address indexed from, address indexed to, uint256 startTokenId, uint256 quantity)',
+  'event Stake(address indexed account, uint256 tokenId)',
+  'event Unstake(address indexed account, uint256 tokenId)'
 ];
 
 // Known signatures from the contract for validation
 const KNOWN_SIGNATURES = {
   BatchMint: '0x2da466a7b24304f47e87fa2e1e5a81b9831ce54fec19055ce277ca2f39ba42c4',
   BatchBurn: '0x1b0acb9f2e1e40b85f49c94aeca2c4bfdc2b514f520fa654a01226f2e30d1a31',
-  BatchTransfer: '0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb'
+  BatchTransfer: '0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb',
+  Stake: id('Stake(address indexed account, uint256 tokenId)'),
+  Unstake: id('Unstake(address indexed account, uint256 tokenId)')
 };
 
 // Function to compute and verify event signatures
@@ -51,7 +55,6 @@ function computeEventSignatures() {
 export class EventListener {
   private provider: WebSocketProvider;
   private nftContract: Contract;
-  private stakingContract: Contract;
   private kinesis: KinesisClient;
   private metrics: MetricsPublisher;
   private logger: Logger;
@@ -75,7 +78,6 @@ export class EventListener {
     try {
       this.logger.info('Starting event listener with config', {
         nftContractAddress: config.nftContractAddress,
-        stakingContractAddress: config.stakingContractAddress,
         wsRpcUrl: config.wsRpcUrl,
         kinesisStreamName: config.kinesisStreamName
       });
@@ -84,17 +86,11 @@ export class EventListener {
       if (!ethers.isAddress(config.nftContractAddress)) {
         throw new Error(`Invalid NFT contract address: ${config.nftContractAddress}`);
       }
-      if (!ethers.isAddress(config.stakingContractAddress)) {
-        throw new Error(`Invalid staking contract address: ${config.stakingContractAddress}`);
-      }
 
       this.logger.info('Contract addresses validated successfully');
       this.logger.info('Attempting to connect to WebSocket provider', { 
         url: config.wsRpcUrl,
-        expectedNFTAddress: '0xd79BeDA34Abf2E1336cFB6F2dE3D0D4ae4579Da7',
-        expectedStakingAddress: '0xb60efDd990f7f2A98059db9480ebd1b4b7Ba115b',
-        providedNFTAddress: config.nftContractAddress,
-        providedStakingAddress: config.stakingContractAddress
+        providedNFTAddress: config.nftContractAddress
       });
       
       const wsCreator = () => {
@@ -129,7 +125,6 @@ export class EventListener {
       });
       
       this.nftContract = new Contract(config.nftContractAddress, EVENT_ABIS, this.provider);
-      this.stakingContract = new Contract(config.stakingContractAddress, EVENT_ABIS, this.provider);
       
       // Initialize Kinesis client with detailed logging
       this.logger.info('Initializing Kinesis client', {
@@ -179,8 +174,7 @@ export class EventListener {
       });
 
       this.logger.info('Contracts initialized', {
-        nftAddress: this.nftContract.target,
-        stakingAddress: this.stakingContract.target
+        nftAddress: this.nftContract.target
       });
     } catch (error) {
       this.logger.error('Failed to initialize WebSocket provider', { error });
@@ -231,7 +225,6 @@ export class EventListener {
   private async setupEventListeners() {
     this.logger.info('🔄 SETUP: Starting event listener setup', {
       nftContractAddress: this.nftContract.target,
-      stakingContractAddress: this.stakingContract.target,
       wsUrl: this.config.wsRpcUrl
     });
 
@@ -264,8 +257,7 @@ export class EventListener {
     try {
       this.logger.info('🔄 SETUP: Verifying contract interfaces', {
         nftEvents: EVENT_ABIS,
-        nftAddress: this.nftContract.target,
-        stakingAddress: this.stakingContract.target
+        nftAddress: this.nftContract.target
       });
 
       // Create and verify filters for each event type
@@ -553,6 +545,85 @@ export class EventListener {
       }
     });
 
+    // Add Stake and Unstake event listeners
+    this.nftContract.on('Stake', async (account, tokenId, event) => {
+      this.logger.info('📥 WEBSOCKET EVENT: Received Stake event', { 
+        tokenId: tokenId.toString(),
+        account: account.toLowerCase(),
+        transactionHash: event.transactionHash,
+        blockNumber: event.blockNumber
+      });
+      try {
+        const receipt = await event.getTransactionReceipt();
+        const block = await event.getBlock();
+        
+        const eventPayload: OnChainEvent = {
+          type: 'Stake',
+          account: account.toLowerCase(),
+          tokenId: tokenId.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: receipt.blockNumber,
+          transactionIndex: receipt.index,
+          logIndex: event.index.toString(16)
+        };
+        
+        await this.handleEvent(eventPayload);
+      } catch (error) {
+        this.logger.error('❌ ERROR: Failed to process Stake event', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          eventData: {
+            account, 
+            tokenId: tokenId.toString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          }
+        });
+      }
+    });
+
+    this.nftContract.on('Unstake', async (account, tokenId, event) => {
+      this.logger.info('📥 WEBSOCKET EVENT: Received Unstake event', { 
+        tokenId: tokenId.toString(),
+        account: account.toLowerCase(),
+        transactionHash: event.transactionHash,
+        blockNumber: event.blockNumber
+      });
+      try {
+        const receipt = await event.getTransactionReceipt();
+        const block = await event.getBlock();
+        
+        const eventPayload: OnChainEvent = {
+          type: 'Unstake',
+          account: account.toLowerCase(),
+          tokenId: tokenId.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: receipt.blockNumber,
+          transactionIndex: receipt.index,
+          logIndex: event.index.toString(16)
+        };
+        
+        await this.handleEvent(eventPayload);
+      } catch (error) {
+        this.logger.error('❌ ERROR: Failed to process Unstake event', {
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack
+          } : error,
+          eventData: {
+            account, 
+            tokenId: tokenId.toString(),
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          }
+        });
+      }
+    });
+
     // Add provider-level error handling
     this.provider.on('error', (error) => {
       this.logger.error('❌ WEBSOCKET: Provider error', { 
@@ -617,7 +688,6 @@ export class EventListener {
 
     this.logger.info('✅ SETUP: Event listeners setup complete', {
       nftContractAddress: this.nftContract.target,
-      stakingContractAddress: this.stakingContract.target,
       wsUrl: this.config.wsRpcUrl
     });
   }
@@ -665,7 +735,7 @@ export class EventListener {
         const txPart = event.transactionIndex.toString().padStart(6, '0');
         
         switch (event.type) {
-          case 'Unstaked':
+          case 'Unstake':
             // For unstaked tokens, use negative numbers to ensure front of queue
             // Calculate a negative position that maintains order but is always at front
             const tokenNum = parseInt(tokenIdStr);
@@ -677,7 +747,7 @@ export class EventListener {
             // For purchases/transfers, use positive numbers (back of queue)
             return `${blockPart}${txPart}${last6Digits}`;
             
-          case 'Staked':
+          case 'Stake':
             // For staked tokens, don't assign a queue position since they're removed from queue
             return '';
             
@@ -866,8 +936,7 @@ export class EventListener {
       });
 
       this.nftContract = new Contract(this.config.nftContractAddress, EVENT_ABIS, this.provider);
-      this.stakingContract = new Contract(this.config.stakingContractAddress, EVENT_ABIS, this.provider);
-
+      
       // Reinitialize event listeners
       await this.setupEventListeners();
       this.startHeartbeat();

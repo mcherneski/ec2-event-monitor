@@ -1,34 +1,38 @@
 export type OnChainEvent = {
-  type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer' | 'Staked' | 'Unstaked';
+  type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer' | 'Stake' | 'Unstake';
   timestamp: number;
   blockNumber: number;
   transactionHash: string;
   transactionIndex: number;
   logIndex: string;
   tokenId: string;
-  startTokenId: string;
-  quantity: string;
 } & (
   | {
       type: 'BatchTransfer';
       from: string;
       to: string;
+      startTokenId: string;
+      quantity: string;
     }
   | {
       type: 'BatchMint';
       to: string;
+      startTokenId: string;
+      quantity: string;
     }
   | {
       type: 'BatchBurn';
       from: string;
+      startTokenId: string;
+      quantity: string;
     }
   | {
-      type: 'Staked';
-      staker: string;
+      type: 'Stake';
+      account: string;
     }
   | {
-      type: 'Unstaked';
-      staker: string;
+      type: 'Unstake';
+      account: string;
     }
 );
 
