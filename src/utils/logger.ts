@@ -4,14 +4,26 @@ import * as path from 'path';
 
 export class Logger implements ILogger {
   private context: string;
-  private logPath: string = '/var/log/event-listener/event-monitor.log';
+  private logPath?: string;
+  private useFileLogging: boolean;
 
-  constructor(context: string) {
+  constructor(context: string, logPath: string = '/var/log/event-monitor.log') {
     this.context = context;
-    // Ensure log directory exists
-    const logDir = path.dirname(this.logPath);
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
+    this.logPath = logPath;
+    this.useFileLogging = false; // Start with file logging disabled
+
+    // Try to enable file logging if we can write to the directory
+    try {
+      const logDir = path.dirname(this.logPath);
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      // Test if we can write to the directory
+      fs.accessSync(logDir, fs.constants.W_OK);
+      this.useFileLogging = true;
+    } catch (error) {
+      console.warn(`File logging disabled - ${error instanceof Error ? error.message : 'Unknown error'}`);
+      this.useFileLogging = false;
     }
   }
 
@@ -41,46 +53,42 @@ export class Logger implements ILogger {
   }
 
   private writeToFile(logEntry: string) {
+    if (!this.useFileLogging || !this.logPath) return;
+    
     try {
       fs.appendFileSync(this.logPath, logEntry + '\n');
     } catch (error) {
-      console.error('Failed to write to log file:', error);
+      console.warn(`Failed to write to log file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Disable file logging on error
+      this.useFileLogging = false;
     }
   }
 
-  info(message: string, data?: any) {
-    const logEntry = JSON.stringify({
-      level: 'INFO',
+  private formatLogEntry(level: string, message: string, data?: any): string {
+    return JSON.stringify({
+      level,
       context: this.context,
       message,
       ...(data && { data: this.serializeData(data) }),
       timestamp: new Date().toISOString()
     });
-    this.writeToFile(logEntry);
+  }
+
+  info(message: string, data?: any) {
+    const logEntry = this.formatLogEntry('INFO', message, data);
     console.log(logEntry);
+    this.writeToFile(logEntry);
   }
 
   error(message: string, data?: any) {
-    const logEntry = JSON.stringify({
-      level: 'ERROR',
-      context: this.context,
-      message,
-      ...(data && { data: this.serializeData(data) }),
-      timestamp: new Date().toISOString()
-    });
-    this.writeToFile(logEntry);
+    const logEntry = this.formatLogEntry('ERROR', message, data);
     console.error(logEntry);
+    this.writeToFile(logEntry);
   }
 
   warn(message: string, data?: any) {
-    const logEntry = JSON.stringify({
-      level: 'WARN',
-      context: this.context,
-      message,
-      ...(data && { data: this.serializeData(data) }),
-      timestamp: new Date().toISOString()
-    });
-    this.writeToFile(logEntry);
+    const logEntry = this.formatLogEntry('WARN', message, data);
     console.warn(logEntry);
+    this.writeToFile(logEntry);
   }
 } 
