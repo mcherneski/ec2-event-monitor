@@ -11,20 +11,20 @@ import AWS from 'aws-sdk';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
-  'event BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)',
-  'event BatchBurn(address indexed from, uint256 startTokenId, uint256 quantity)',
-  'event BatchTransfer(address indexed from, address indexed to, uint256 startTokenId, uint256 quantity)',
-  'event Stake(address indexed account, uint256 tokenId)',
-  'event Unstake(address indexed account, uint256 tokenId)'
+  'event BatchMint(address,uint256,uint256)',
+  'event BatchBurn(address,uint256,uint256)',
+  'event BatchTransfer(address,address,uint256,uint256)',
+  'event Stake(address,uint256)',
+  'event Unstake(address,uint256)'
 ];
 
 // Known signatures from the contract for validation
 const KNOWN_SIGNATURES = {
-  BatchMint: id('BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)'),
-  BatchBurn: id('BatchBurn(address indexed from, uint256 startTokenId, uint256 quantity)'),
-  BatchTransfer: id('BatchTransfer(address indexed from, address indexed to, uint256 startTokenId, uint256 quantity)'),
-  Stake: id('Stake(address indexed account, uint256 tokenId)'),
-  Unstake: id('Unstake(address indexed account, uint256 tokenId)')
+  BatchMint: '0x63232c37f2c1fdcb4fc657df1cef6cabc7181c5b604530242590ffe5fa91ab74',
+  BatchBurn: '0xc72888b04eef48850058b96e06db799bbca4b5511d5bd54d375af532446c7496',
+  BatchTransfer: '0xe33fa6b1dc0e64c45482249b300e8b7a8c335905802467c723315913c6ff3911',
+  Stake: '0xebedb8b3c678666e7f36970bc8f57abf6d8fa2e828c0da91ea5b75bf68ed101a',
+  Unstake: '0x85082129d87b2fe11527cb1b3b7a520aeb5aa6913f88a3d8757fe40d1db02fdd'
 };
 
 // Function to compute and verify event signatures
@@ -119,7 +119,7 @@ export class EventListener {
         return ws;
       };
       
-      this.provider = new WebSocketProvider(wsCreator, "base-sepolia", {
+      this.provider = new WebSocketProvider(wsCreator, "base", {
         staticNetwork: true,
         batchMaxCount: 1
       });
@@ -952,7 +952,7 @@ export class EventListener {
       
       // Create new provider and contracts
       const wsCreator = this.createWebSocketProvider();
-      this.provider = new WebSocketProvider(wsCreator, "base-sepolia", {
+      this.provider = new WebSocketProvider(wsCreator, "base", {
         staticNetwork: true,
         batchMaxCount: 1
       });
