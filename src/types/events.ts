@@ -5,7 +5,6 @@ export type OnChainEvent = {
   transactionHash: string;
   transactionIndex: number;
   logIndex: string;
-  tokenId: string;
 } & (
   | {
       type: 'BatchTransfer';
@@ -27,12 +26,9 @@ export type OnChainEvent = {
       quantity: string;
     }
   | {
-      type: 'Stake';
+      type: 'Stake' | 'Unstake';
       account: string;
-    }
-  | {
-      type: 'Unstake';
-      account: string;
+      tokenId: string;
     }
 );
 
@@ -41,4 +37,4 @@ export interface MetricData {
   value: number;
   unit: string;
   dimensions?: Record<string, string>;
-} 
+}

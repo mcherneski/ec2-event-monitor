@@ -20,9 +20,9 @@ const EVENT_ABIS = [
 
 // Known signatures from the contract for validation
 const KNOWN_SIGNATURES = {
-  BatchMint: '0x2da466a7b24304f47e87fa2e1e5a81b9831ce54fec19055ce277ca2f39ba42c4',
-  BatchBurn: '0x1b0acb9f2e1e40b85f49c94aeca2c4bfdc2b514f520fa654a01226f2e30d1a31',
-  BatchTransfer: '0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb',
+  BatchMint: id('BatchMint(address indexed to, uint256 startTokenId, uint256 quantity)'),
+  BatchBurn: id('BatchBurn(address indexed from, uint256 startTokenId, uint256 quantity)'),
+  BatchTransfer: id('BatchTransfer(address indexed from, address indexed to, uint256 startTokenId, uint256 quantity)'),
   Stake: id('Stake(address indexed account, uint256 tokenId)'),
   Unstake: id('Unstake(address indexed account, uint256 tokenId)')
 };
@@ -413,24 +413,19 @@ export class EventListener {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
-        // Process each token in the batch
-        for (let i = 0; i < quantity.toNumber(); i++) {
-          const tokenId = startTokenId.toNumber() + i;
-          const eventPayload: OnChainEvent = {
-            type: 'BatchMint',
-            to: to.toLowerCase(),
-            tokenId: tokenId.toString(),
-            startTokenId: startTokenId.toString(),
-            quantity: quantity.toString(),
-            timestamp: block.timestamp,
-            transactionHash: event.transactionHash,
-            blockNumber: receipt.blockNumber,
-            transactionIndex: receipt.index,
-            logIndex: event.index.toString(16)
-          };
-          
-          await this.handleEvent(eventPayload);
-        }
+        const eventPayload: OnChainEvent = {
+          type: 'BatchMint',
+          to: to.toLowerCase(),
+          startTokenId: startTokenId.toString(),
+          quantity: quantity.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: receipt.blockNumber,
+          transactionIndex: receipt.index,
+          logIndex: event.index.toString(16)
+        };
+        
+        await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process BatchMint event', {
           error: error instanceof Error ? {
@@ -460,24 +455,19 @@ export class EventListener {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
-        // Process each token in the batch
-        for (let i = 0; i < quantity.toNumber(); i++) {
-          const tokenId = startTokenId.toNumber() + i;
-          const eventPayload: OnChainEvent = {
-            type: 'BatchBurn',
-            from: from.toLowerCase(),
-            tokenId: tokenId.toString(),
-            startTokenId: startTokenId.toString(),
-            quantity: quantity.toString(),
-            timestamp: block.timestamp,
-            transactionHash: event.transactionHash,
-            blockNumber: receipt.blockNumber,
-            transactionIndex: receipt.index,
-            logIndex: event.index.toString(16)
-          };
-          
-          await this.handleEvent(eventPayload);
-        }
+        const eventPayload: OnChainEvent = {
+          type: 'BatchBurn',
+          from: from.toLowerCase(),
+          startTokenId: startTokenId.toString(),
+          quantity: quantity.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: receipt.blockNumber,
+          transactionIndex: receipt.index,
+          logIndex: event.index.toString(16)
+        };
+        
+        await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process BatchBurn event', {
           error: error instanceof Error ? {
@@ -508,25 +498,20 @@ export class EventListener {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
-        // Process each token in the batch
-        for (let i = 0; i < quantity.toNumber(); i++) {
-          const tokenId = startTokenId.toNumber() + i;
-          const eventPayload: OnChainEvent = {
-            type: 'BatchTransfer',
-            from: from.toLowerCase(),
-            to: to.toLowerCase(),
-            tokenId: tokenId.toString(),
-            startTokenId: startTokenId.toString(),
-            quantity: quantity.toString(),
-            timestamp: block.timestamp,
-            transactionHash: event.transactionHash,
-            blockNumber: receipt.blockNumber,
-            transactionIndex: receipt.index,
-            logIndex: event.index.toString(16)
-          };
-          
-          await this.handleEvent(eventPayload);
-        }
+        const eventPayload: OnChainEvent = {
+          type: 'BatchTransfer',
+          from: from.toLowerCase(),
+          to: to.toLowerCase(),
+          startTokenId: startTokenId.toString(),
+          quantity: quantity.toString(),
+          timestamp: block.timestamp,
+          transactionHash: event.transactionHash,
+          blockNumber: receipt.blockNumber,
+          transactionIndex: receipt.index,
+          logIndex: event.index.toString(16)
+        };
+        
+        await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process BatchTransfer event', {
           error: error instanceof Error ? {
@@ -547,17 +532,19 @@ export class EventListener {
 
     // Add Stake and Unstake event listeners
     this.nftContract.on('Stake', async (account, tokenId, event) => {
+      const eventId = `${event.blockNumber}-${event.transactionHash}-${event.index.toString(16)}`;
       this.logger.info('📥 WEBSOCKET EVENT: Received Stake event', { 
         tokenId: tokenId.toString(),
         account: account.toLowerCase(),
         transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
+        blockNumber: event.blockNumber,
+        eventId
       });
       try {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
-        const eventPayload: OnChainEvent = {
+        await this.handleEvent({
           type: 'Stake',
           account: account.toLowerCase(),
           tokenId: tokenId.toString(),
@@ -566,9 +553,7 @@ export class EventListener {
           blockNumber: receipt.blockNumber,
           transactionIndex: receipt.index,
           logIndex: event.index.toString(16)
-        };
-        
-        await this.handleEvent(eventPayload);
+        });
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process Stake event', {
           error: error instanceof Error ? {
@@ -576,7 +561,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            account, 
+            account: account.toLowerCase(), 
             tokenId: tokenId.toString(),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
@@ -615,7 +600,7 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            account, 
+            account: account.toLowerCase(),
             tokenId: tokenId.toString(),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
@@ -701,7 +686,12 @@ export class EventListener {
         eventType: event.type,
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber,
-        tokenId: event.tokenId,
+        ...(event.type === 'Stake' || event.type === 'Unstake' 
+          ? { tokenId: (event as { type: 'Stake' | 'Unstake', tokenId: string }).tokenId }
+          : { 
+              startTokenId: (event as { type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer', startTokenId: string }).startTokenId,
+              quantity: (event as { type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer', quantity: string }).quantity 
+            }),
         eventId
       });
 
@@ -743,32 +733,34 @@ export class EventListener {
         const txPart = event.transactionIndex.toString().padStart(6, '0');
         
         switch (event.type) {
-          case 'Unstake':
+          case 'Unstake': {
             // For unstaked tokens, use negative numbers to ensure front of queue
-            // Calculate a negative position that maintains order but is always at front
-            const tokenNum = parseInt(event.tokenId);
+            const unstakeEvent = event as { type: 'Unstake', tokenId: string };
+            const tokenNum = parseInt(unstakeEvent.tokenId);
             const negativePosition = (-999999 + (tokenNum % 999999)).toString().padStart(6, '0');
             return `${blockPart}${txPart}-${negativePosition}`;
+          }
             
           case 'BatchTransfer':
-          case 'BatchMint':
+          case 'BatchMint': {
             // For purchases/transfers, use positive numbers (back of queue)
-            const last6Digits = event.tokenId.length > 6 
-              ? event.tokenId.slice(-6)
-              : event.tokenId.padStart(6, '0');
+            const batchEvent = event as { type: 'BatchMint' | 'BatchTransfer', startTokenId: string };
+            const startTokenNum = parseInt(batchEvent.startTokenId);
+            const last6Digits = startTokenNum.toString().padStart(6, '0');
             return `${blockPart}${txPart}${last6Digits}`;
+          }
             
           case 'Stake':
             // For staked tokens, don't assign a queue position since they're removed from queue
             return '';
             
-          case 'BatchBurn':
+          case 'BatchBurn': {
             // For burned tokens, they'll be removed from queue in DB layer
-            // Still need a valid queue number for event ordering
-            const burnLast6Digits = event.tokenId.length > 6 
-              ? event.tokenId.slice(-6)
-              : event.tokenId.padStart(6, '0');
+            const burnEvent = event as { type: 'BatchBurn', startTokenId: string };
+            const burnTokenNum = parseInt(burnEvent.startTokenId);
+            const burnLast6Digits = burnTokenNum.toString().padStart(6, '0');
             return `${blockPart}${txPart}${burnLast6Digits}`;
+          }
         }
       })();
       
@@ -835,10 +827,15 @@ export class EventListener {
 
       // Add type-specific properties to log data
       if (event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer') {
+        const batchEvent = event as { type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer', startTokenId: string, quantity: string };
         Object.assign(logData, { 
-          startTokenId: event.startTokenId, 
-          quantity: event.quantity,
-          tokenId: event.tokenId
+          startTokenId: batchEvent.startTokenId,
+          quantity: batchEvent.quantity
+        });
+      } else if (event.type === 'Stake' || event.type === 'Unstake') {
+        const stakeEvent = event as { type: 'Stake' | 'Unstake', tokenId: string };
+        Object.assign(logData, {
+          tokenId: stakeEvent.tokenId
         });
       }
 
@@ -1221,7 +1218,7 @@ export class EventListener {
   }
 
   // Add cleanup method for consumer on shutdown
-  private async cleanupConsumer() {
+  private async cleanupConsumer(): Promise<void> {
     if (this.consumerId) {
       try {
         const streamARN = `arn:aws:kinesis:${this.config.awsRegion}:${this.config.awsAccountId}:stream/${this.config.kinesisStreamName}`;
