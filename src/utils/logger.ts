@@ -94,19 +94,28 @@ export class Logger implements ILogger {
 
   info(message: string, data?: any) {
     const logEntry = this.formatLogEntry('INFO', message, data);
-    console.log(logEntry);
-    this.writeToFile(logEntry);
+    if (this.useFileLogging) {
+      this.writeToFile(logEntry);
+    } else {
+      console.log(logEntry);
+    }
   }
 
   error(message: string, data?: any) {
     const logEntry = this.formatLogEntry('ERROR', message, data);
-    console.error(logEntry);
-    this.writeToFile(logEntry, true); // Write to error log file
+    if (this.useFileLogging) {
+      this.writeToFile(logEntry, true); // Write to error log file
+    } else {
+      console.error(logEntry);
+    }
   }
 
   warn(message: string, data?: any) {
     const logEntry = this.formatLogEntry('WARN', message, data);
-    console.warn(logEntry);
-    this.writeToFile(logEntry);
+    if (this.useFileLogging) {
+      this.writeToFile(logEntry);
+    } else {
+      console.warn(logEntry);
+    }
   }
 } 

@@ -355,8 +355,27 @@ export class EventListener {
           if (!block) return;
 
           // Get all events in this block for our contracts
+          this.logger.info('🔍 DEBUG: Querying events for block', { 
+            blockNumber,
+            contractAddress: this.nftContract.target
+          });
+
           const events = await this.nftContract.queryFilter('*' as any, block.number, block.number);
           
+          // Log raw events for debugging
+          if (events.length > 0) {
+            this.logger.info('🔍 DEBUG: Raw events found in block', {
+              blockNumber,
+              eventCount: events.length,
+              events: events.map(event => ({
+                name: event instanceof EventLog ? event.fragment?.name : 'unknown',
+                topics: event.topics,
+                data: event.data,
+                address: event.address
+              }))
+            });
+          }
+
           // Only log if we found relevant events
           if (events.length > 0) {
             // Count events by type, ensuring we handle the event data safely
@@ -368,26 +387,42 @@ export class EventListener {
                 if ('fragment' in event && event.fragment?.name) {
                   eventName = event.fragment.name;
                   
-                  // Safely handle event args without calling toNumber
-                  if (event.args) {
-                    // Convert BigInt values to strings immediately
-                    const args = Array.from(event.args).map(arg => 
+                  this.logger.info('🔍 DEBUG: Processing event', {
+                    eventName,
+                    eventFragment: event.fragment.format(),
+                    eventSignature: id(event.fragment.format()),
+                    knownSignature: KNOWN_SIGNATURES[eventName as keyof typeof KNOWN_SIGNATURES],
+                    args: event.args ? Array.from(event.args).map(arg => 
                       typeof arg === 'bigint' ? arg.toString() : arg
-                    );
-                  }
+                    ) : []
+                  });
+                  
                 } else if (event.topics?.[0]) {
                   // Try to match the topic signature
                   const matchedEvent = Object.entries(KNOWN_SIGNATURES)
                     .find(([_, sig]) => sig === event.topics[0]);
                   if (matchedEvent) {
                     eventName = matchedEvent[0];
+                    this.logger.info('🔍 DEBUG: Matched event by topic', {
+                      eventName,
+                      topic: event.topics[0]
+                    });
+                  } else {
+                    this.logger.warn('⚠️ Unknown event topic', {
+                      topic: event.topics[0],
+                      knownSignatures: KNOWN_SIGNATURES
+                    });
                   }
                 }
               } catch (error) {
                 this.logger.error('Error processing event in block', {
-                  error: error instanceof Error ? error.message : error,
+                  error: error instanceof Error ? {
+                    message: error.message,
+                    stack: error.stack
+                  } : error,
                   eventType: eventName,
-                  blockNumber: block.number
+                  blockNumber: block.number,
+                  eventData: event
                 });
               }
               
