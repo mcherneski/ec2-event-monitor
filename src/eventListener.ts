@@ -695,7 +695,7 @@ export class EventListener {
       // Create a unique event identifier for deduplication
       const eventId = `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`;
       
-      this.logger.info('📤 KINESIS: Starting event processing', {
+      this.logger.info('🔄 KINESIS: Starting event processing', {
         eventType: event.type,
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber,
@@ -717,7 +717,7 @@ export class EventListener {
       }).promise();
 
       if (checkDuplicate.Item) {
-        this.logger.info('🔄 KINESIS: Duplicate event detected, skipping', {
+        this.logger.info('⚠️ KINESIS: Duplicate event detected, skipping', {
           eventId,
           eventType: event.type,
           transactionHash: event.transactionHash
@@ -735,10 +735,9 @@ export class EventListener {
       // Verify Kinesis credentials before sending
       const credentials = await this.kinesis.config.credentials();
       this.logger.info('🔐 KINESIS: Verified credentials', {
-        hasValidCredentials: !!credentials
+        hasValidCredentials: !!credentials,
+        streamName: this.config.kinesisStreamName
       });
-      
-      const data = Buffer.from(JSON.stringify(event));
       
       // Calculate queue position based on event type
       const queueOrder = (() => {
@@ -747,7 +746,6 @@ export class EventListener {
         
         switch (event.type) {
           case 'Unstake': {
-            // For unstaked tokens, use negative numbers to ensure front of queue
             const tokenNum = event.tokenId;
             const negativePosition = (-999999 + (tokenNum % 999999)).toString().padStart(6, '0');
             return `${blockPart}${txPart}-${negativePosition}`;
@@ -755,26 +753,23 @@ export class EventListener {
             
           case 'BatchTransfer':
           case 'BatchMint': {
-            // For purchases/transfers, use positive numbers (back of queue)
             const startTokenNum = event.startTokenId;
             const last6Digits = startTokenNum.toString().padStart(6, '0');
             return `${blockPart}${txPart}${last6Digits}`;
           }
             
           case 'Stake':
-            // For staked tokens, don't assign a queue position since they're removed from queue
             return '';
             
           case 'BatchBurn': {
-            // For burned tokens, they'll be removed from queue in DB layer
             const burnTokenNum = event.startTokenId;
             const burnLast6Digits = burnTokenNum.toString().padStart(6, '0');
             return `${blockPart}${txPart}${burnLast6Digits}`;
           }
         }
       })();
-      
-      // Generate a unique partition key using available data and queue order
+
+      // Generate partition key
       const partitionKey = (() => {
         switch (event.type) {
           case 'BatchMint':
@@ -787,26 +782,27 @@ export class EventListener {
         }
       })();
 
-      // Only include queueOrder in enriched event if it's not empty
+      // Enrich event with queue order
       const enrichedEvent = {
         ...event,
         ...(queueOrder && { queueOrder }),
         eventId
       };
 
-      const command = new PutRecordCommand({
-        StreamName: this.config.kinesisStreamName,
-        PartitionKey: partitionKey,
-        Data: Buffer.from(JSON.stringify(enrichedEvent))
-      });
-
-      this.logger.info('📤 KINESIS: Sending event', {
+      this.logger.info('📤 KINESIS: Preparing to send event', {
         streamName: this.config.kinesisStreamName,
         eventType: event.type,
         transactionHash: event.transactionHash,
         queueOrder,
         eventId,
-        dataSize: data.length
+        partitionKey,
+        dataSize: JSON.stringify(enrichedEvent).length
+      });
+
+      const command = new PutRecordCommand({
+        StreamName: this.config.kinesisStreamName,
+        PartitionKey: partitionKey,
+        Data: Buffer.from(JSON.stringify(enrichedEvent))
       });
 
       const result = await this.kinesis.send(command);
@@ -821,8 +817,7 @@ export class EventListener {
         }
       }).promise();
 
-      // Log success with type-safe event properties
-      const logData = {
+      this.logger.info('✅ KINESIS: Event sent successfully', {
         eventType: event.type,
         shardId: result.ShardId,
         sequenceNumber: result.SequenceNumber,
@@ -832,22 +827,11 @@ export class EventListener {
         streamName: this.config.kinesisStreamName,
         partitionKey,
         queueOrder,
-        eventId
-      };
-
-      // Add type-specific properties to log data
-      if (event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer') {
-        Object.assign(logData, { 
-          startTokenId: event.startTokenId,
-          quantity: event.quantity
-        });
-      } else if (event.type === 'Stake' || event.type === 'Unstake') {
-        Object.assign(logData, {
-          tokenId: event.tokenId
-        });
-      }
-
-      this.logger.info('✅ KINESIS: Event sent successfully', logData);
+        eventId,
+        ...(event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer' 
+          ? { startTokenId: event.startTokenId, quantity: event.quantity }
+          : { tokenId: event.tokenId })
+      });
 
       // Update Kinesis metrics
       updateMetrics.updateKinesis({
@@ -871,21 +855,10 @@ export class EventListener {
         }
       });
       
-      // Update local metrics
+      // Update metrics
       updateMetrics.incrementEvent('errors');
       updateMetrics.updateKinesis({
         errors: metrics.kinesis.errors + 1
-      });
-
-      // Publish error metric to CloudWatch
-      await this.metrics.publishMetric({
-        name: 'ErrorCount',
-        value: 1,
-        unit: 'Count',
-        dimensions: {
-          ErrorType: 'KinesisError',
-          Environment: this.config.environment
-        }
       });
 
       throw error;
