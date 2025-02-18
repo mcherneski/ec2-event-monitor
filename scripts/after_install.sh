@@ -29,6 +29,10 @@ fi
 # Ensure proper permissions
 sudo chown -R ec2-user:ec2-user .
 
+# Set environment to prod by default
+NODE_ENV=${NODE_ENV:-prod}
+echo "Deployment environment: ${NODE_ENV}"
+
 # Set up environment file
 echo "Setting up environment file..."
 rm -f .env
@@ -36,17 +40,29 @@ touch .env
 sudo chown ec2-user:ec2-user .env
 chmod 644 .env
 
-# Set up basic environment variables
-cat > .env << EOL
-NODE_ENV=${NODE_ENV:-staging}
+# Set up basic environment variables with prod as default
+if [ "${NODE_ENV}" = "staging" ]; then
+    echo "⚠️ WARNING: Configuring for STAGING environment..."
+    cat > .env << EOL
+NODE_ENV=staging
 AWS_REGION=us-east-1
 AWS_SDK_LOAD_CONFIG=1
+AWS_ACCOUNT_ID=339712950990
 EOL
+else
+    echo "✅ Configuring for PRODUCTION environment..."
+    cat > .env << EOL
+NODE_ENV=prod
+AWS_REGION=us-east-1
+AWS_SDK_LOAD_CONFIG=1
+AWS_ACCOUNT_ID=339712950990
+EOL
+fi
 
 # Fetch environment variables from SSM
-echo "Fetching environment variables from SSM..."
+echo "Fetching environment variables from SSM for ${NODE_ENV} environment..."
 aws ssm get-parameters-by-path \
-    --path "/ngu-points-system-v2/${NODE_ENV:-staging}" \
+    --path "/ngu-points-system-v2/${NODE_ENV}" \
     --with-decryption \
     --region us-east-1 \
     --recursive \
@@ -58,20 +74,22 @@ aws ssm get-parameters-by-path \
     fi
 done
 
-# Also try to fetch any STAGING_ prefixed parameters
-echo "Fetching STAGING_ prefixed parameters..."
-aws ssm get-parameters-by-path \
-    --path "/ngu-points-system-v2/${NODE_ENV:-staging}/STAGING_" \
-    --with-decryption \
-    --region us-east-1 \
-    --recursive \
-    --query "Parameters[*].[Name,Value]" \
-    --output text | while read -r name value; do
-    param_name=$(echo "$name" | rev | cut -d'/' -f1 | rev)
-    if [ "$param_name" != "NODE_ENV" ]; then
-        echo "$param_name=$value" >> .env
-    fi
-done
+# Only fetch STAGING_ prefixed parameters in staging environment
+if [ "${NODE_ENV}" = "staging" ]; then
+    echo "⚠️ Fetching STAGING-specific parameters..."
+    aws ssm get-parameters-by-path \
+        --path "/ngu-points-system-v2/staging/STAGING_" \
+        --with-decryption \
+        --region us-east-1 \
+        --recursive \
+        --query "Parameters[*].[Name,Value]" \
+        --output text | while read -r name value; do
+        param_name=$(echo "$name" | rev | cut -d'/' -f1 | rev)
+        if [ "$param_name" != "NODE_ENV" ]; then
+            echo "$param_name=$value" >> .env
+        fi
+    done
+fi
 
 # Verify .env file
 if [ ! -s .env ]; then
@@ -86,15 +104,22 @@ grep -v "KEY\|SECRET\|PASSWORD\|PRIVATE" .env || true
 NODE_PATH=$(which node)
 echo "Using Node.js from: ${NODE_PATH}"
 
-# Create logs directory
+# Create logs directory with environment-specific naming
 echo "Setting up log directory..."
-mkdir -p /home/ec2-user/event-monitor/logs
-chown ec2-user:ec2-user /home/ec2-user/event-monitor/logs
-chmod 755 /home/ec2-user/event-monitor/logs
+LOG_DIR="/home/ec2-user/event-monitor/logs"
+mkdir -p "${LOG_DIR}"
+chown ec2-user:ec2-user "${LOG_DIR}"
+chmod 755 "${LOG_DIR}"
 
-sudo bash -c "cat > /etc/systemd/system/event-monitor.service << EOF
+# Create systemd service file with environment-specific settings
+SERVICE_NAME="event-monitor"
+if [ "${NODE_ENV}" = "staging" ]; then
+    SERVICE_NAME="event-monitor-staging"
+fi
+
+sudo bash -c "cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
-Description=NGU Event Monitor Service
+Description=NGU Event Monitor Service (${NODE_ENV} environment)
 After=network.target
 
 [Service]
@@ -102,59 +127,62 @@ Type=simple
 User=ec2-user
 Group=ec2-user
 WorkingDirectory=/home/ec2-user/event-monitor
-Environment=NODE_ENV=staging
+# Set NODE_ENV explicitly to prevent any ambiguity
+Environment=NODE_ENV=${NODE_ENV}
 Environment=AWS_REGION=us-east-1
 Environment=NODE_OPTIONS=\"--experimental-specifier-resolution=node\"
 EnvironmentFile=/home/ec2-user/event-monitor/.env
 ExecStart=${NODE_PATH} dist/run.js
 Restart=always
 RestartSec=10
-StandardOutput=append:/home/ec2-user/event-monitor/logs/event-monitor.log
-StandardError=append:/home/ec2-user/event-monitor/logs/event-monitor.error.log
-SyslogIdentifier=event-monitor
+StandardOutput=append:${LOG_DIR}/${SERVICE_NAME}.log
+StandardError=append:${LOG_DIR}/${SERVICE_NAME}.error.log
+SyslogIdentifier=${SERVICE_NAME}
 
 [Install]
 WantedBy=multi-user.target
 EOF"
 
-# Set up log files
+# Set up log files with environment-specific names
 echo "Setting up log files..."
-touch /home/ec2-user/event-monitor/logs/event-monitor.log /home/ec2-user/event-monitor/logs/event-monitor.error.log
-chown ec2-user:ec2-user /home/ec2-user/event-monitor/logs/event-monitor.log /home/ec2-user/event-monitor/logs/event-monitor.error.log
-chmod 644 /home/ec2-user/event-monitor/logs/event-monitor.log /home/ec2-user/event-monitor/logs/event-monitor.error.log
+touch "${LOG_DIR}/${SERVICE_NAME}.log" "${LOG_DIR}/${SERVICE_NAME}.error.log"
+chown ec2-user:ec2-user "${LOG_DIR}/${SERVICE_NAME}.log" "${LOG_DIR}/${SERVICE_NAME}.error.log"
+chmod 644 "${LOG_DIR}/${SERVICE_NAME}.log" "${LOG_DIR}/${SERVICE_NAME}.error.log"
 
 # Stop the service if it's running
 echo "Stopping existing service..."
-sudo systemctl stop event-monitor || true
+sudo systemctl stop ${SERVICE_NAME} || true
 
 # Clear existing logs
 echo "Clearing old logs..."
-truncate -s 0 /home/ec2-user/event-monitor/logs/event-monitor.log
-truncate -s 0 /home/ec2-user/event-monitor/logs/event-monitor.error.log
+truncate -s 0 "${LOG_DIR}/${SERVICE_NAME}.log"
+truncate -s 0 "${LOG_DIR}/${SERVICE_NAME}.error.log"
 
 # Start the service
 echo "Starting service..."
 sudo systemctl daemon-reload
-sudo systemctl enable event-monitor
-sudo systemctl restart event-monitor
+sudo systemctl enable ${SERVICE_NAME}
+sudo systemctl restart ${SERVICE_NAME}
 
 # Wait for service to start
 echo "Waiting for service to start..."
 sleep 5
 
 # Check service status
-echo "Service status:"
-sudo systemctl status event-monitor
+echo "Service status for ${NODE_ENV} environment:"
+sudo systemctl status ${SERVICE_NAME}
 
 # Check logs for errors
 echo "Checking logs for errors..."
 echo "Standard output log:"
-tail -n 50 /home/ec2-user/event-monitor/logs/event-monitor.log
+tail -n 50 "${LOG_DIR}/${SERVICE_NAME}.log"
 echo "Error log:"
-tail -n 50 /home/ec2-user/event-monitor/logs/event-monitor.error.log
+tail -n 50 "${LOG_DIR}/${SERVICE_NAME}.error.log"
 
 # Verify service is running
-if ! systemctl is-active --quiet event-monitor; then
-    echo "Error: Service failed to start"
+if ! systemctl is-active --quiet ${SERVICE_NAME}; then
+    echo "Error: Service failed to start in ${NODE_ENV} environment"
     exit 1
-fi 
+fi
+
+echo "✅ Deployment completed successfully for ${NODE_ENV} environment" 
