@@ -651,9 +651,12 @@ export class EventListener {
       // This ensures proper ordering within batches while maintaining global order
       // blockNumber: 9 digits (supports ~1 billion blocks, >30 years on Base)
       // transactionIndex: 6 digits (supports up to 999,999 transactions per block)
-      // tokenId: last 6 digits (padded with leading zeros if needed)
+      // tokenId: exactly 6 digits (take last 6 if longer, pad with leading zeros if shorter)
       const tokenIdStr = event.tokenId.toString();
-      const last6Digits = tokenIdStr.slice(-6).padStart(6, '0');
+      // Take last 6 digits if number is longer, or pad with zeros if shorter
+      const last6Digits = tokenIdStr.length > 6 
+        ? tokenIdStr.slice(-6)  // Take last 6 digits for long numbers
+        : tokenIdStr.padStart(6, '0');  // Pad with leading zeros for short numbers
       const queueOrder = `${event.blockNumber.toString().padStart(9, '0')}${event.transactionIndex.toString().padStart(6, '0')}${last6Digits}`;
       
       // Generate a unique partition key using available data and queue order
