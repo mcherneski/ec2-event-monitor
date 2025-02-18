@@ -1,14 +1,16 @@
 import { WebSocketProvider, Contract, EventLog, id, Fragment, EventFragment } from 'ethers';
 import WebSocket from 'ws';
 import { KinesisClient, PutRecordCommand, DescribeStreamCommand, RegisterStreamConsumerCommand, DescribeStreamConsumerCommand, ConsumerStatus, ListStreamConsumersCommand, DeregisterStreamConsumerCommand } from '@aws-sdk/client-kinesis';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
 import type { Config } from './types/config.js';
 import type { OnChainEvent } from './types/events.js';
 import { Logger } from './utils/logger.js';
 import { MetricsPublisher } from './utils/metrics.js';
 import { updateMetrics, metrics } from './run.js';
 import * as ethers from 'ethers';
-import AWS from 'aws-sdk';
 import { handleBatchMint, handleBatchBurn, handleBatchTransfer, handleStake, handleUnstake, initializeHandlers } from './eventHandlers';
+import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
@@ -68,7 +70,7 @@ export class EventListener {
   private metrics: MetricsPublisher;
   private logger: Logger;
   private config: Config;
-  private dynamoDb: AWS.DynamoDB.DocumentClient;
+  private dynamoDb: DynamoDBDocument;
   private reconnectAttempts: number = 0;
   private heartbeatInterval?: NodeJS.Timeout;
   private consumerId?: string;
@@ -82,7 +84,6 @@ export class EventListener {
   constructor(config: Config) {
     this.config = config;
     this.logger = new Logger('EventListener');
-    this.dynamoDb = new AWS.DynamoDB.DocumentClient();
     
     try {
       this.logger.info('Starting event listener with config', {
@@ -90,6 +91,10 @@ export class EventListener {
         wsRpcUrl: config.wsRpcUrl,
         kinesisStreamName: config.kinesisStreamName
       });
+
+      // Initialize DynamoDB client
+      const dynamoDbClient = new DynamoDBClient({ region: config.awsRegion });
+      this.dynamoDb = DynamoDBDocument.from(dynamoDbClient);
 
       // Validate contract addresses
       if (!ethers.isAddress(config.nftContractAddress)) {
@@ -713,12 +718,12 @@ export class EventListener {
       });
 
       // Check DynamoDB for duplicate event
-      const checkDuplicate = await this.dynamoDb.get({
+      const checkDuplicate = await this.dynamoDb.send(new GetCommand({
         TableName: `${this.config.kinesisStreamName}-events`,
         Key: {
           eventId: eventId
         }
-      }).promise();
+      }));
 
       if (checkDuplicate.Item) {
         this.logger.info('⚠️ KINESIS: Duplicate event detected, skipping', {
@@ -812,14 +817,14 @@ export class EventListener {
       const result = await this.kinesis.send(command);
 
       // Store event ID in DynamoDB for deduplication
-      await this.dynamoDb.put({
+      await this.dynamoDb.send(new PutCommand({
         TableName: `${this.config.kinesisStreamName}-events`,
         Item: {
           eventId: eventId,
           timestamp: Date.now(),
           ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
         }
-      }).promise();
+      }));
 
       this.logger.info('✅ KINESIS: Event sent successfully', {
         eventType: event.type,

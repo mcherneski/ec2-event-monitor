@@ -1,16 +1,21 @@
 import { KinesisClient } from '@aws-sdk/client-kinesis';
-import { DynamoDB } from 'aws-sdk';
+import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { Config } from '../types/config';
 
 // Shared state for all handlers
 let kinesis: KinesisClient;
-let dynamoDb: DynamoDB.DocumentClient;
+let dynamoDb: DynamoDBDocument;
 let config: Config;
 
 // Initialize shared handlers
-export const initializeHandlers = (kinesisClient: KinesisClient, dynamoDbClient: DynamoDB.DocumentClient, appConfig: Config) => {
+export const initializeHandlers = (
+  kinesisClient: KinesisClient, 
+  dynamoDbClient: DynamoDBClient, 
+  appConfig: Config
+) => {
   kinesis = kinesisClient;
-  dynamoDb = dynamoDbClient;
+  dynamoDb = DynamoDBDocument.from(dynamoDbClient);
   config = appConfig;
 };
 

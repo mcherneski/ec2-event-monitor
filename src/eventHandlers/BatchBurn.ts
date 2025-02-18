@@ -2,6 +2,7 @@ import { BatchBurnEvent } from '../types/events';
 import { Logger } from '../utils/logger';
 import { handleError } from '../utils/error';
 import { PutRecordCommand } from '@aws-sdk/client-kinesis';
+import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { getHandlerClients } from './index';
 
 export const handleBatchBurn = async (
@@ -25,12 +26,12 @@ export const handleBatchBurn = async (
     const eventId = `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`;
 
     // Check for duplicate event
-    const checkDuplicate = await dynamoDb.get({
+    const checkDuplicate = await dynamoDb.send(new GetCommand({
       TableName: `${config.kinesisStreamName}-events`,
       Key: {
         eventId: eventId
       }
-    }).promise();
+    }));
 
     if (checkDuplicate.Item) {
       logger.info('⚠️ Duplicate BatchBurn event detected, skipping', {
@@ -76,14 +77,14 @@ export const handleBatchBurn = async (
     const result = await kinesis.send(command);
 
     // Store event ID in DynamoDB for deduplication
-    await dynamoDb.put({
+    await dynamoDb.send(new PutCommand({
       TableName: `${config.kinesisStreamName}-events`,
       Item: {
         eventId: eventId,
         timestamp: Date.now(),
         ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
       }
-    }).promise();
+    }));
 
     logger.info('✅ BatchBurn event sent successfully', {
       eventId,
