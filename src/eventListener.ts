@@ -8,6 +8,7 @@ import { MetricsPublisher } from './utils/metrics.js';
 import { updateMetrics, metrics } from './run.js';
 import * as ethers from 'ethers';
 import AWS from 'aws-sdk';
+import { handleBatchMint, handleBatchBurn, handleBatchTransfer, handleStake, handleUnstake } from './eventHandlers';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
@@ -349,20 +350,36 @@ export class EventListener {
           
           // Only log if we found relevant events
           if (events.length > 0) {
-            // Count events by type
+            // Count events by type, ensuring we handle the event data safely
             const eventCounts = events.reduce((acc: Record<string, number>, event) => {
               let eventName = 'unknown';
               
-              // Check if it's an EventLog
-              if ('fragment' in event && event.fragment?.name) {
-                eventName = event.fragment.name;
-              } else if (event.topics?.[0]) {
-                // Try to match the topic signature
-                const matchedEvent = Object.entries(KNOWN_SIGNATURES)
-                  .find(([_, sig]) => sig === event.topics[0]);
-                if (matchedEvent) {
-                  eventName = matchedEvent[0];
+              try {
+                // Check if it's an EventLog
+                if ('fragment' in event && event.fragment?.name) {
+                  eventName = event.fragment.name;
+                  
+                  // Safely handle event args without calling toNumber
+                  if (event.args) {
+                    // Convert BigInt values to strings immediately
+                    const args = Array.from(event.args).map(arg => 
+                      typeof arg === 'bigint' ? arg.toString() : arg
+                    );
+                  }
+                } else if (event.topics?.[0]) {
+                  // Try to match the topic signature
+                  const matchedEvent = Object.entries(KNOWN_SIGNATURES)
+                    .find(([_, sig]) => sig === event.topics[0]);
+                  if (matchedEvent) {
+                    eventName = matchedEvent[0];
+                  }
                 }
+              } catch (error) {
+                this.logger.error('Error processing event in block', {
+                  error: error instanceof Error ? error.message : error,
+                  eventType: eventName,
+                  blockNumber: block.number
+                });
               }
               
               acc[eventName] = (acc[eventName] || 0) + 1;
@@ -410,17 +427,9 @@ export class EventListener {
 
     // NFT Contract Events
     this.nftContract.on('BatchMint', async (to: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
-      // Convert parameters to strings, handling both bigint and string inputs
       const startTokenIdStr = startTokenId.toString();
       const quantityStr = quantity.toString();
       
-      this.logger.info('📥 WEBSOCKET EVENT: Received BatchMint event', { 
-        startTokenId: startTokenIdStr, 
-        quantity: quantityStr,
-        to: to.toLowerCase(),
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
-      });
       try {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
@@ -437,6 +446,7 @@ export class EventListener {
           logIndex: event.index.toString(16)
         };
         
+        await handleBatchMint(eventPayload, this.logger);
         await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process BatchMint event', {
@@ -456,17 +466,9 @@ export class EventListener {
     });
 
     this.nftContract.on('BatchBurn', async (from: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
-      // Convert parameters to strings, handling both bigint and string inputs
       const startTokenIdStr = startTokenId.toString();
       const quantityStr = quantity.toString();
       
-      this.logger.info('📥 WEBSOCKET EVENT: Received BatchBurn event', { 
-        startTokenId: startTokenIdStr, 
-        quantity: quantityStr,
-        from: from.toLowerCase(),
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
-      });
       try {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
@@ -483,6 +485,7 @@ export class EventListener {
           logIndex: event.index.toString(16)
         };
         
+        await handleBatchBurn(eventPayload, this.logger);
         await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process BatchBurn event', {
@@ -502,18 +505,9 @@ export class EventListener {
     });
 
     this.nftContract.on('BatchTransfer', async (from: string, to: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
-      // Convert parameters to strings, handling both bigint and string inputs
       const startTokenIdStr = startTokenId.toString();
       const quantityStr = quantity.toString();
       
-      this.logger.info('📥 WEBSOCKET EVENT: Received BatchTransfer event', { 
-        startTokenId: startTokenIdStr, 
-        quantity: quantityStr,
-        from: from.toLowerCase(),
-        to: to.toLowerCase(),
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
-      });
       try {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
@@ -531,6 +525,7 @@ export class EventListener {
           logIndex: event.index.toString(16)
         };
         
+        await handleBatchTransfer(eventPayload, this.logger);
         await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process BatchTransfer event', {
@@ -550,17 +545,9 @@ export class EventListener {
       }
     });
 
-    // Add Stake and Unstake event listeners
     this.nftContract.on('Stake', async (account: string, tokenId: bigint | string, event: EventLog) => {
-      // Convert parameters to strings, handling both bigint and string inputs
       const tokenIdStr = tokenId.toString();
       
-      this.logger.info('📥 WEBSOCKET EVENT: Received Stake event', { 
-        tokenId: tokenIdStr,
-        account: account.toLowerCase(),
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
-      });
       try {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
@@ -576,6 +563,7 @@ export class EventListener {
           logIndex: event.index.toString(16)
         };
         
+        await handleStake(eventPayload, this.logger);
         await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process Stake event', {
@@ -594,15 +582,8 @@ export class EventListener {
     });
 
     this.nftContract.on('Unstake', async (account: string, tokenId: bigint | string, event: EventLog) => {
-      // Convert parameters to strings, handling both bigint and string inputs
       const tokenIdStr = tokenId.toString();
       
-      this.logger.info('📥 WEBSOCKET EVENT: Received Unstake event', { 
-        tokenId: tokenIdStr,
-        account: account.toLowerCase(),
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber
-      });
       try {
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
@@ -618,6 +599,7 @@ export class EventListener {
           logIndex: event.index.toString(16)
         };
         
+        await handleUnstake(eventPayload, this.logger);
         await this.handleEvent(eventPayload);
       } catch (error) {
         this.logger.error('❌ ERROR: Failed to process Unstake event', {
@@ -1264,6 +1246,7 @@ export class EventListener {
       }
     }
   }
+
   public async stop(): Promise<void> {
     this.logger.info('Stopping event listener');
     
