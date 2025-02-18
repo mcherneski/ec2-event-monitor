@@ -24,9 +24,9 @@ phases:
   post_build:
     commands:
       - echo "Starting post-build phase..."
-      - echo "Copying compiled files to deployment directory..."
+      - echo "Copying files to deployment directory..."
       - mkdir -p deployment
-      - cp -r dist package.json package-lock.json tsconfig.json scripts appspec.yml deployment/
+      - cp -r dist src package.json package-lock.json tsconfig.json scripts appspec.yml deployment/
       - echo "Build completed on `date`"
 
 artifacts:
