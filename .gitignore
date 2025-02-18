@@ -24,3 +24,5 @@ Thumbs.db
 
 agent-instructions.md
 /abi/
+
+dynamodb-policy.json
