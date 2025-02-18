@@ -8,7 +8,7 @@ import { MetricsPublisher } from './utils/metrics.js';
 import { updateMetrics, metrics } from './run.js';
 import * as ethers from 'ethers';
 import AWS from 'aws-sdk';
-import { handleBatchMint, handleBatchBurn, handleBatchTransfer, handleStake, handleUnstake } from './eventHandlers';
+import { handleBatchMint, handleBatchBurn, handleBatchTransfer, handleStake, handleUnstake, initializeHandlers } from './eventHandlers';
 
 // ABI fragments for the events we care about
 const EVENT_ABIS = [
@@ -146,6 +146,10 @@ export class EventListener {
         maxAttempts: 3,
         retryMode: 'standard'
       });
+
+      // Initialize event handlers with required clients
+      initializeHandlers(this.kinesis, this.dynamoDb, config);
+      this.logger.info('Event handlers initialized with Kinesis and DynamoDB clients');
       
       // Verify event signatures
       const computedSignatures = computeEventSignatures();
