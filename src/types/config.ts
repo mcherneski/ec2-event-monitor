@@ -54,9 +54,9 @@ export const getConfig = async (): Promise<Config> => {
     logger.info('Starting to fetch SSM parameters', { stage });
     
     const parameterPaths = stage === 'prod' ? [
-      `/ngu-points-system-v2/${stage}/PROD_NFT_CONTRACT_ADDRESS`,
-      `/ngu-points-system-v2/${stage}/PROD_WS_RPC_URL`,
-      `/ngu-points-system-v2/${stage}/KINESIS_STREAM_NAME`
+      `/ngu-points-system-v2/prod/NFT_CONTRACT_ADDRESS`,
+      `/ngu-points-system-v2/prod/WS_RPC_URL`,
+      `/ngu-points-system-v2/prod/KINESIS_STREAM_NAME`
     ] : [
       `/ngu-points-system-v2/${stage}/STAGING_NFT_CONTRACT_ADDRESS`,
       `/ngu-points-system-v2/${stage}/STAGING_WS_RPC_URL`,
