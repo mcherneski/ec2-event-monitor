@@ -150,8 +150,7 @@ const start = async () => {
     logger.info('Configuration loaded', {
       port: config.port,
       environment: config.environment,
-      nftContractAddress: config.nftContractAddress,
-      stakingContractAddress: config.stakingContractAddress
+      nftContractAddress: config.nftContractAddress
     });
 
     // Test WebSocket connection before proceeding
