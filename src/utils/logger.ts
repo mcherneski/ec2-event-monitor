@@ -10,8 +10,8 @@ export class Logger implements ILogger {
 
   constructor(
     context: string, 
-    logPath: string = '/var/log/event-monitor.log',
-    errorLogPath: string = '/var/log/event-monitor.error.log'
+    logPath: string = path.join(process.cwd(), 'logs', 'event-monitor.log'),
+    errorLogPath: string = path.join(process.cwd(), 'logs', 'event-monitor.error.log')
   ) {
     this.context = context;
     this.logPath = logPath;
@@ -20,21 +20,24 @@ export class Logger implements ILogger {
 
     // Try to enable file logging if we can write to the directories
     try {
-      // Setup main log file
-      const logDir = path.dirname(this.logPath);
-      if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir, { recursive: true });
+      // Setup logs directory and files
+      const logsDir = path.dirname(this.logPath);
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
       }
-      fs.accessSync(logDir, fs.constants.W_OK);
 
-      // Setup error log file
-      const errorLogDir = path.dirname(this.errorLogPath);
-      if (!fs.existsSync(errorLogDir)) {
-        fs.mkdirSync(errorLogDir, { recursive: true });
-      }
-      fs.accessSync(errorLogDir, fs.constants.W_OK);
+      // Ensure we can write to both log files
+      [this.logPath, this.errorLogPath].forEach(filePath => {
+        // Create file if it doesn't exist
+        if (!fs.existsSync(filePath)) {
+          fs.writeFileSync(filePath, '');
+        }
+        // Verify we can write to it
+        fs.accessSync(filePath, fs.constants.W_OK);
+      });
 
       this.useFileLogging = true;
+      console.log(`File logging enabled - using directory: ${logsDir}`);
     } catch (error) {
       console.warn(`File logging disabled - ${error instanceof Error ? error.message : 'Unknown error'}`);
       this.useFileLogging = false;
