@@ -7,6 +7,13 @@ phases:
     commands:
       - echo "Installing dependencies..."
       - npm install --production=false
+      - npm install -g typescript  # Ensure TypeScript is available globally
+
+  pre_build:
+    commands:
+      - echo "Starting pre-build phase..."
+      - echo "Cleaning any existing dist directory..."
+      - rm -rf dist/
 
   build:
     commands:
@@ -17,24 +24,15 @@ phases:
   post_build:
     commands:
       - echo "Starting post-build phase..."
+      - echo "Copying compiled files to deployment directory..."
+      - mkdir -p deployment
+      - cp -r dist package.json package-lock.json tsconfig.json scripts appspec.yml deployment/
       - echo "Build completed on `date`"
 
 artifacts:
   files:
-    - appspec.yml
-    - scripts/**/*
-    - src/**/*
-    - dist/**/*
-    - package.json
-    - package-lock.json
-    - tsconfig.json
-  exclude-paths:
-    - node_modules/**/*
-    - .git/**/*
-    - .env*
-    - config/**/*
-    - "*.md"
-  base-directory: '.'
+    - '**/*'
+  base-directory: 'deployment'
   discard-paths: false
 
 cache:

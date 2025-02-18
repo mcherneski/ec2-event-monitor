@@ -17,7 +17,7 @@ export const handleStake = async (
     });
 
     // Process the event...
-    // Note: All values are already strings in the new type
+    // Note: All numeric values (tokenId) are numbers, not strings
     
   } catch (error) {
     handleError(error, 'Stake event handler', logger, {

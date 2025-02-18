@@ -427,18 +427,19 @@ export class EventListener {
 
     // NFT Contract Events
     this.nftContract.on('BatchMint', async (to: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
-      const startTokenIdStr = startTokenId.toString();
-      const quantityStr = quantity.toString();
-      
       try {
+        // Convert bigint values to numbers
+        const startTokenIdNum = typeof startTokenId === 'bigint' ? Number(startTokenId) : Number(startTokenId);
+        const quantityNum = typeof quantity === 'bigint' ? Number(quantity) : Number(quantity);
+        
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
         const eventPayload: OnChainEvent = {
           type: 'BatchMint',
           to: to.toLowerCase(),
-          startTokenId: startTokenIdStr,
-          quantity: quantityStr,
+          startTokenId: startTokenIdNum,
+          quantity: quantityNum,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -455,9 +456,9 @@ export class EventListener {
             stack: error.stack
           } : error,
           eventData: {
-            to, 
-            startTokenId: startTokenIdStr,
-            quantity: quantityStr,
+            to,
+            startTokenId: typeof startTokenId === 'bigint' ? Number(startTokenId) : Number(startTokenId),
+            quantity: typeof quantity === 'bigint' ? Number(quantity) : Number(quantity),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -466,18 +467,19 @@ export class EventListener {
     });
 
     this.nftContract.on('BatchBurn', async (from: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
-      const startTokenIdStr = startTokenId.toString();
-      const quantityStr = quantity.toString();
-      
       try {
+        // Convert bigint values to numbers
+        const startTokenIdNum = typeof startTokenId === 'bigint' ? Number(startTokenId) : Number(startTokenId);
+        const quantityNum = typeof quantity === 'bigint' ? Number(quantity) : Number(quantity);
+        
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
         const eventPayload: OnChainEvent = {
           type: 'BatchBurn',
           from: from.toLowerCase(),
-          startTokenId: startTokenIdStr,
-          quantity: quantityStr,
+          startTokenId: startTokenIdNum,
+          quantity: quantityNum,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -495,8 +497,8 @@ export class EventListener {
           } : error,
           eventData: {
             from,
-            startTokenId: startTokenIdStr,
-            quantity: quantityStr,
+            startTokenId: typeof startTokenId === 'bigint' ? Number(startTokenId) : Number(startTokenId),
+            quantity: typeof quantity === 'bigint' ? Number(quantity) : Number(quantity),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -505,10 +507,11 @@ export class EventListener {
     });
 
     this.nftContract.on('BatchTransfer', async (from: string, to: string, startTokenId: bigint | string, quantity: bigint | string, event: EventLog) => {
-      const startTokenIdStr = startTokenId.toString();
-      const quantityStr = quantity.toString();
-      
       try {
+        // Convert bigint values to numbers
+        const startTokenIdNum = typeof startTokenId === 'bigint' ? Number(startTokenId) : Number(startTokenId);
+        const quantityNum = typeof quantity === 'bigint' ? Number(quantity) : Number(quantity);
+        
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
@@ -516,8 +519,8 @@ export class EventListener {
           type: 'BatchTransfer',
           from: from.toLowerCase(),
           to: to.toLowerCase(),
-          startTokenId: startTokenIdStr,
-          quantity: quantityStr,
+          startTokenId: startTokenIdNum,
+          quantity: quantityNum,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -536,8 +539,8 @@ export class EventListener {
           eventData: {
             from,
             to,
-            startTokenId: startTokenIdStr,
-            quantity: quantityStr,
+            startTokenId: typeof startTokenId === 'bigint' ? Number(startTokenId) : Number(startTokenId),
+            quantity: typeof quantity === 'bigint' ? Number(quantity) : Number(quantity),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -546,16 +549,17 @@ export class EventListener {
     });
 
     this.nftContract.on('Stake', async (account: string, tokenId: bigint | string, event: EventLog) => {
-      const tokenIdStr = tokenId.toString();
-      
       try {
+        // Convert bigint value to number
+        const tokenIdNum = typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId);
+        
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
         const eventPayload: OnChainEvent = {
           type: 'Stake',
           account: account.toLowerCase(),
-          tokenId: tokenIdStr,
+          tokenId: tokenIdNum,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -573,7 +577,7 @@ export class EventListener {
           } : error,
           eventData: {
             account,
-            tokenId: tokenIdStr,
+            tokenId: typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -582,16 +586,17 @@ export class EventListener {
     });
 
     this.nftContract.on('Unstake', async (account: string, tokenId: bigint | string, event: EventLog) => {
-      const tokenIdStr = tokenId.toString();
-      
       try {
+        // Convert bigint value to number
+        const tokenIdNum = typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId);
+        
         const receipt = await event.getTransactionReceipt();
         const block = await event.getBlock();
         
         const eventPayload: OnChainEvent = {
           type: 'Unstake',
           account: account.toLowerCase(),
-          tokenId: tokenIdStr,
+          tokenId: tokenIdNum,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
           blockNumber: receipt.blockNumber,
@@ -609,7 +614,7 @@ export class EventListener {
           } : error,
           eventData: {
             account,
-            tokenId: tokenIdStr,
+            tokenId: typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId),
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash
           }
@@ -695,10 +700,10 @@ export class EventListener {
         transactionHash: event.transactionHash,
         blockNumber: event.blockNumber,
         ...(event.type === 'Stake' || event.type === 'Unstake' 
-          ? { tokenId: (event as { type: 'Stake' | 'Unstake', tokenId: string }).tokenId }
+          ? { tokenId: event.tokenId }
           : { 
-              startTokenId: (event as { type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer', startTokenId: string }).startTokenId,
-              quantity: (event as { type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer', quantity: string }).quantity 
+              startTokenId: event.startTokenId,
+              quantity: event.quantity 
             }),
         eventId
       });
@@ -743,8 +748,7 @@ export class EventListener {
         switch (event.type) {
           case 'Unstake': {
             // For unstaked tokens, use negative numbers to ensure front of queue
-            const unstakeEvent = event as { type: 'Unstake', tokenId: string };
-            const tokenNum = parseInt(unstakeEvent.tokenId);
+            const tokenNum = event.tokenId;
             const negativePosition = (-999999 + (tokenNum % 999999)).toString().padStart(6, '0');
             return `${blockPart}${txPart}-${negativePosition}`;
           }
@@ -752,8 +756,7 @@ export class EventListener {
           case 'BatchTransfer':
           case 'BatchMint': {
             // For purchases/transfers, use positive numbers (back of queue)
-            const batchEvent = event as { type: 'BatchMint' | 'BatchTransfer', startTokenId: string };
-            const startTokenNum = parseInt(batchEvent.startTokenId);
+            const startTokenNum = event.startTokenId;
             const last6Digits = startTokenNum.toString().padStart(6, '0');
             return `${blockPart}${txPart}${last6Digits}`;
           }
@@ -764,8 +767,7 @@ export class EventListener {
             
           case 'BatchBurn': {
             // For burned tokens, they'll be removed from queue in DB layer
-            const burnEvent = event as { type: 'BatchBurn', startTokenId: string };
-            const burnTokenNum = parseInt(burnEvent.startTokenId);
+            const burnTokenNum = event.startTokenId;
             const burnLast6Digits = burnTokenNum.toString().padStart(6, '0');
             return `${blockPart}${txPart}${burnLast6Digits}`;
           }
@@ -835,15 +837,13 @@ export class EventListener {
 
       // Add type-specific properties to log data
       if (event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer') {
-        const batchEvent = event as { type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer', startTokenId: string, quantity: string };
         Object.assign(logData, { 
-          startTokenId: batchEvent.startTokenId,
-          quantity: batchEvent.quantity
+          startTokenId: event.startTokenId,
+          quantity: event.quantity
         });
       } else if (event.type === 'Stake' || event.type === 'Unstake') {
-        const stakeEvent = event as { type: 'Stake' | 'Unstake', tokenId: string };
         Object.assign(logData, {
-          tokenId: stakeEvent.tokenId
+          tokenId: event.tokenId
         });
       }
 

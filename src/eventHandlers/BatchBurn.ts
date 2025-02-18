@@ -18,7 +18,7 @@ export const handleBatchBurn = async (
     });
 
     // Process the event...
-    // Note: All values are already strings in the new type
+    // Note: All numeric values (startTokenId, quantity) are numbers, not strings
     
   } catch (error) {
     handleError(error, 'BatchBurn event handler', logger, {

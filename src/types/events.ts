@@ -11,16 +11,16 @@ interface BaseEvent {
 export interface BatchMintEvent extends BaseEvent {
   type: 'BatchMint';
   to: string;
-  startTokenId: string;
-  quantity: string;
+  startTokenId: number;
+  quantity: number;
 }
 
 // BatchBurn event interface
 export interface BatchBurnEvent extends BaseEvent {
   type: 'BatchBurn';
   from: string;
-  startTokenId: string;
-  quantity: string;
+  startTokenId: number;
+  quantity: number;
 }
 
 // BatchTransfer event interface
@@ -28,22 +28,22 @@ export interface BatchTransferEvent extends BaseEvent {
   type: 'BatchTransfer';
   from: string;
   to: string;
-  startTokenId: string;
-  quantity: string;
+  startTokenId: number;
+  quantity: number;
 }
 
 // Stake event interface
 export interface StakeEvent extends BaseEvent {
   type: 'Stake';
   account: string;
-  tokenId: string;
+  tokenId: number;
 }
 
 // Unstake event interface
 export interface UnstakeEvent extends BaseEvent {
   type: 'Unstake';
   account: string;
-  tokenId: string;
+  tokenId: number;
 }
 
 // Union type for all events
