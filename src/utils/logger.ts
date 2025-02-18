@@ -4,22 +4,36 @@ import * as path from 'path';
 
 export class Logger implements ILogger {
   private context: string;
-  private logPath?: string;
+  private logPath: string;
+  private errorLogPath: string;
   private useFileLogging: boolean;
 
-  constructor(context: string, logPath: string = '/var/log/event-monitor.log') {
+  constructor(
+    context: string, 
+    logPath: string = '/var/log/event-monitor.log',
+    errorLogPath: string = '/var/log/event-monitor.error.log'
+  ) {
     this.context = context;
     this.logPath = logPath;
+    this.errorLogPath = errorLogPath;
     this.useFileLogging = false; // Start with file logging disabled
 
-    // Try to enable file logging if we can write to the directory
+    // Try to enable file logging if we can write to the directories
     try {
+      // Setup main log file
       const logDir = path.dirname(this.logPath);
       if (!fs.existsSync(logDir)) {
         fs.mkdirSync(logDir, { recursive: true });
       }
-      // Test if we can write to the directory
       fs.accessSync(logDir, fs.constants.W_OK);
+
+      // Setup error log file
+      const errorLogDir = path.dirname(this.errorLogPath);
+      if (!fs.existsSync(errorLogDir)) {
+        fs.mkdirSync(errorLogDir, { recursive: true });
+      }
+      fs.accessSync(errorLogDir, fs.constants.W_OK);
+
       this.useFileLogging = true;
     } catch (error) {
       console.warn(`File logging disabled - ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -52,13 +66,14 @@ export class Logger implements ILogger {
     return data;
   }
 
-  private writeToFile(logEntry: string) {
-    if (!this.useFileLogging || !this.logPath) return;
+  private writeToFile(logEntry: string, isError: boolean = false) {
+    if (!this.useFileLogging) return;
     
     try {
-      fs.appendFileSync(this.logPath, logEntry + '\n');
+      const filePath = isError ? this.errorLogPath : this.logPath;
+      fs.appendFileSync(filePath, logEntry + '\n');
     } catch (error) {
-      console.warn(`Failed to write to log file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.warn(`Failed to write to ${isError ? 'error ' : ''}log file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Disable file logging on error
       this.useFileLogging = false;
     }
@@ -83,7 +98,7 @@ export class Logger implements ILogger {
   error(message: string, data?: any) {
     const logEntry = this.formatLogEntry('ERROR', message, data);
     console.error(logEntry);
-    this.writeToFile(logEntry);
+    this.writeToFile(logEntry, true); // Write to error log file
   }
 
   warn(message: string, data?: any) {
