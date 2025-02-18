@@ -729,7 +729,10 @@ export class EventListener {
       const credentials = await this.kinesis.config.credentials();
       this.logger.info('🔐 KINESIS: Verified credentials', {
         hasValidCredentials: !!credentials,
-        streamName: this.config.kinesisStreamName
+        streamName: this.config.kinesisStreamName,
+        credentialProvider: credentials?.constructor?.name,
+        identityId: (credentials as any)?.identityId,
+        accessKeyId: credentials?.accessKeyId?.substring(0, 5) + '...'
       });
       
       // Calculate queue position based on event type
@@ -789,50 +792,88 @@ export class EventListener {
         queueOrder,
         eventId,
         partitionKey,
-        dataSize: JSON.stringify(enrichedEvent).length
-      });
-
-      const command = new PutRecordCommand({
-        StreamName: this.config.kinesisStreamName,
-        PartitionKey: partitionKey,
-        Data: Buffer.from(JSON.stringify(enrichedEvent))
-      });
-
-      const result = await this.kinesis.send(command);
-
-      // Store event ID in DynamoDB for deduplication
-      await this.dynamoDb.send(new PutCommand({
-        TableName: `${this.config.kinesisStreamName}-events`,
-        Item: {
-          eventId: eventId,
-          timestamp: Date.now(),
-          ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
+        dataSize: JSON.stringify(enrichedEvent).length,
+        eventData: enrichedEvent,
+        kinesisConfig: {
+          region: this.kinesis.config.region,
+          maxAttempts: this.kinesis.config.maxAttempts,
+          retryMode: this.kinesis.config.retryMode
         }
-      }));
-
-      this.logger.info('✅ KINESIS: Event sent successfully', {
-        eventType: event.type,
-        shardId: result.ShardId,
-        sequenceNumber: result.SequenceNumber,
-        transactionHash: event.transactionHash,
-        blockNumber: event.blockNumber,
-        timestamp: new Date().toISOString(),
-        streamName: this.config.kinesisStreamName,
-        partitionKey,
-        queueOrder,
-        eventId,
-        ...(event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer' 
-          ? { startTokenId: event.startTokenId, quantity: event.quantity }
-          : { tokenId: event.tokenId })
       });
 
-      // Update Kinesis metrics
-      updateMetrics.updateKinesis({
-        recordsSent: metrics.kinesis.recordsSent + 1,
-        batchesSent: metrics.kinesis.batchesSent + 1,
-        lastBatchTime: Date.now()
-      });
+      try {
+        const command = new PutRecordCommand({
+          StreamName: this.config.kinesisStreamName,
+          PartitionKey: partitionKey,
+          Data: Buffer.from(JSON.stringify(enrichedEvent))
+        });
 
+        this.logger.info('📤 KINESIS: Sending command', {
+          command: {
+            streamName: command.input.StreamName,
+            partitionKey: command.input.PartitionKey,
+            dataSize: command.input.Data?.length ?? 0
+          }
+        });
+
+        const result = await this.kinesis.send(command);
+
+        // Store event ID in DynamoDB for deduplication
+        await this.dynamoDb.send(new PutCommand({
+          TableName: `${this.config.kinesisStreamName}-events`,
+          Item: {
+            eventId: eventId,
+            timestamp: Date.now(),
+            ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
+          }
+        }));
+
+        this.logger.info('✅ KINESIS: Event sent successfully', {
+          eventType: event.type,
+          shardId: result.ShardId,
+          sequenceNumber: result.SequenceNumber,
+          transactionHash: event.transactionHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date().toISOString(),
+          streamName: this.config.kinesisStreamName,
+          partitionKey,
+          queueOrder,
+          eventId,
+          ...(event.type === 'BatchMint' || event.type === 'BatchBurn' || event.type === 'BatchTransfer' 
+            ? { startTokenId: event.startTokenId, quantity: event.quantity }
+            : { tokenId: event.tokenId })
+        });
+
+        // Update Kinesis metrics
+        updateMetrics.updateKinesis({
+          recordsSent: metrics.kinesis.recordsSent + 1,
+          batchesSent: metrics.kinesis.batchesSent + 1,
+          lastBatchTime: Date.now()
+        });
+
+      } catch (error) {
+        this.logger.error('❌ KINESIS: Failed to send event', { 
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack,
+            code: (error as any).code,
+            requestId: (error as any).$metadata?.requestId
+          } : error,
+          eventDetails: {
+            type: event.type,
+            transactionHash: event.transactionHash,
+            blockNumber: event.blockNumber
+          }
+        });
+        
+        // Update metrics
+        updateMetrics.incrementEvent('errors');
+        updateMetrics.updateKinesis({
+          errors: metrics.kinesis.errors + 1
+        });
+
+        throw error;
+      }
     } catch (error) {
       this.logger.error('❌ KINESIS: Failed to send event', { 
         error: error instanceof Error ? {
