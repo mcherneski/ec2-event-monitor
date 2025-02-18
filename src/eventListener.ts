@@ -625,7 +625,8 @@ export class EventListener {
           eventObject: {
             blockNumber: event.blockNumber,
             transactionHash: event.transactionHash,
-            logIndex: event.index
+            logIndex: event.index,
+            transactionIndex: event.transactionIndex
           }
         });
 
@@ -656,8 +657,8 @@ export class EventListener {
           quantity: quantityNum,
           timestamp: block.timestamp,
           transactionHash: event.transactionHash,
-          blockNumber: receipt.blockNumber,
-          transactionIndex: receipt.index,
+          blockNumber: event.blockNumber,
+          transactionIndex: event.transactionIndex,
           logIndex: event.index.toString(16)
         };
         
@@ -681,8 +682,8 @@ export class EventListener {
             to,
             startTokenId: typeof startTokenId === 'bigint' ? startTokenId.toString() : startTokenId,
             quantity: typeof quantity === 'bigint' ? quantity.toString() : quantity,
-            blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
+            blockNumber: event?.blockNumber,
+            transactionHash: event?.transactionHash
           }
         });
       }
