@@ -646,18 +646,47 @@ export class EventListener {
       
       const data = Buffer.from(JSON.stringify(event));
       
-      // Create a queue ordering that includes blockNumber, transactionIndex, and last 6 digits of tokenId
-      // Format: <blockNumber><transactionIndex><last6DigitsOfId>
-      // This ensures proper ordering within batches while maintaining global order
-      // blockNumber: 9 digits (supports ~1 billion blocks, >30 years on Base)
+      // Create a queue ordering that includes blockNumber, transactionIndex, and modified tokenId
+      // Format: <blockNumber><transactionIndex><modifiedTokenId>
+      // blockNumber: 9 digits (supports ~1 billion blocks)
       // transactionIndex: 6 digits (supports up to 999,999 transactions per block)
-      // tokenId: exactly 6 digits (take last 6 if longer, pad with leading zeros if shorter)
+      // modifiedTokenId: 6 digits with special handling:
+      //   - Unstaked tokens: negative number to ensure front of queue
+      //   - Purchased/Transferred tokens: positive number (back of queue)
+      //   - Staked/Burned tokens: removed from queue entirely
       const tokenIdStr = event.tokenId.toString();
-      // Take last 6 digits if number is longer, or pad with zeros if shorter
       const last6Digits = tokenIdStr.length > 6 
         ? tokenIdStr.slice(-6)  // Take last 6 digits for long numbers
         : tokenIdStr.padStart(6, '0');  // Pad with leading zeros for short numbers
-      const queueOrder = `${event.blockNumber.toString().padStart(9, '0')}${event.transactionIndex.toString().padStart(6, '0')}${last6Digits}`;
+
+      // Calculate queue position based on event type
+      const queueOrder = (() => {
+        const blockPart = event.blockNumber.toString().padStart(9, '0');
+        const txPart = event.transactionIndex.toString().padStart(6, '0');
+        
+        switch (event.type) {
+          case 'Unstaked':
+            // For unstaked tokens, use negative numbers to ensure front of queue
+            // Calculate a negative position that maintains order but is always at front
+            const tokenNum = parseInt(tokenIdStr);
+            const negativePosition = (-999999 + (tokenNum % 999999)).toString().padStart(6, '0');
+            return `${blockPart}${txPart}-${negativePosition}`;
+            
+          case 'BatchTransfer':
+          case 'BatchMint':
+            // For purchases/transfers, use positive numbers (back of queue)
+            return `${blockPart}${txPart}${last6Digits}`;
+            
+          case 'Staked':
+            // For staked tokens, don't assign a queue position since they're removed from queue
+            return '';
+            
+          case 'BatchBurn':
+            // For burned tokens, they'll be removed from queue in DB layer
+            // Still need a valid queue number for event ordering
+            return `${blockPart}${txPart}${last6Digits}`;
+        }
+      })();
       
       // Generate a unique partition key using available data and queue order
       const partitionKey = (() => {
@@ -669,10 +698,10 @@ export class EventListener {
         }
       })();
 
-      // Add queue order to the event data
+      // Only include queueOrder in enriched event if it's not empty
       const enrichedEvent = {
         ...event,
-        queueOrder
+        ...(queueOrder && { queueOrder })
       };
 
       const command = new PutRecordCommand({

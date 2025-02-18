@@ -1,5 +1,5 @@
 export type OnChainEvent = {
-  type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer';
+  type: 'BatchMint' | 'BatchBurn' | 'BatchTransfer' | 'Staked' | 'Unstaked';
   timestamp: number;
   blockNumber: number;
   transactionHash: string;
@@ -21,6 +21,14 @@ export type OnChainEvent = {
   | {
       type: 'BatchBurn';
       from: string;
+    }
+  | {
+      type: 'Staked';
+      staker: string;
+    }
+  | {
+      type: 'Unstaked';
+      staker: string;
     }
 );
 
