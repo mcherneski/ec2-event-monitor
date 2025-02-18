@@ -12,6 +12,12 @@ export const handleBatchMint = async (
   const { kinesis, dynamoDb, config } = getHandlerClients();
 
   try {
+    logger.info('🔄 FLOW: Entered handleBatchMint', {
+      eventId: `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`,
+      blockNumber: event.blockNumber,
+      transactionHash: event.transactionHash
+    });
+
     const { to, startTokenId, quantity } = event;
     
     logger.info('📥 Processing BatchMint event', {

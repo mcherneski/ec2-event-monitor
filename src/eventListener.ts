@@ -455,6 +455,11 @@ export class EventListener {
                               });
                               await handleBatchMint(eventPayload, this.logger);
                               this.logger.info('🔍 DEBUG: BatchMint handler completed');
+                              this.logger.info('🔄 FLOW: About to call handleEvent', {
+                                eventId: `${eventPayload.blockNumber}-${eventPayload.transactionHash}-${eventPayload.logIndex}`,
+                                blockNumber: eventPayload.blockNumber,
+                                transactionHash: eventPayload.transactionHash
+                              });
                               await this.handleEvent(eventPayload);
                               this.logger.info('🔍 DEBUG: handleEvent completed for BatchMint');
                             }
@@ -818,15 +823,34 @@ export class EventListener {
           Data: Buffer.from(JSON.stringify(enrichedEvent))
         });
 
-        this.logger.info('📤 KINESIS: Sending command', {
+        this.logger.info('📤 KINESIS: Sending command details', {
           command: {
             streamName: command.input.StreamName,
             partitionKey: command.input.PartitionKey,
-            dataSize: command.input.Data?.length ?? 0
+            dataSize: command.input.Data?.length ?? 0,
+            eventType: event.type,
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash,
+            data: enrichedEvent
           }
         });
 
         const result = await this.kinesis.send(command);
+
+        this.logger.info('📤 KINESIS: Send result details', {
+          result: {
+            shardId: result.ShardId,
+            sequenceNumber: result.SequenceNumber,
+            encryptionType: result.EncryptionType,
+            status: 'success'
+          },
+          command: {
+            streamName: command.input.StreamName,
+            partitionKey: command.input.PartitionKey,
+            eventType: event.type,
+            blockNumber: event.blockNumber
+          }
+        });
 
         // Store event ID in DynamoDB for deduplication
         await this.dynamoDb.send(new PutCommand({
