@@ -434,6 +434,11 @@ export class EventListener {
                           switch (eventName) {
                             case 'BatchMint': {
                               const [to, startTokenId, quantity] = decodedEvent.args;
+                              this.logger.info('🔍 DEBUG: About to create BatchMint event payload', {
+                                to,
+                                startTokenId: Number(startTokenId),
+                                quantity: Number(quantity)
+                              });
                               const eventPayload: BatchMintEvent = {
                                 type: 'BatchMint',
                                 to: to.toLowerCase(),
@@ -445,8 +450,13 @@ export class EventListener {
                                 transactionIndex: receipt.index,
                                 logIndex: event.index.toString(16)
                               };
+                              this.logger.info('🔍 DEBUG: Created BatchMint event payload, about to call handler', {
+                                payload: eventPayload
+                              });
                               await handleBatchMint(eventPayload, this.logger);
+                              this.logger.info('🔍 DEBUG: BatchMint handler completed');
                               await this.handleEvent(eventPayload);
+                              this.logger.info('🔍 DEBUG: handleEvent completed for BatchMint');
                             }
                             break;
 
