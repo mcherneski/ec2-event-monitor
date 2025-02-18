@@ -13,8 +13,18 @@ source /home/ec2-user/.bashrc
 
 # Install dependencies
 echo "Installing dependencies..."
-rm -rf node_modules
-npm ci --production
+rm -rf node_modules dist
+npm ci
+
+# Build TypeScript
+echo "Building TypeScript..."
+npm run build
+
+# Verify dist directory exists and contains built files
+if [ ! -d "dist" ] || [ ! -f "dist/run.js" ]; then
+    echo "Error: Build failed - dist/run.js not found"
+    exit 1
+fi
 
 # Ensure proper permissions
 sudo chown -R ec2-user:ec2-user .
@@ -121,8 +131,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable event-monitor
 sudo systemctl restart event-monitor
 
-# Wait and check status
+# Wait for service to start
+echo "Waiting for service to start..."
 sleep 5
+
+# Check service status
 echo "Service status:"
 sudo systemctl status event-monitor
 
@@ -131,4 +144,10 @@ echo "Checking logs for errors..."
 echo "Standard output log:"
 tail -n 50 /var/log/event-monitor.log
 echo "Error log:"
-tail -n 50 /var/log/event-monitor.error.log 
+tail -n 50 /var/log/event-monitor.error.log
+
+# Verify service is running
+if ! systemctl is-active --quiet event-monitor; then
+    echo "Error: Service failed to start"
+    exit 1
+fi 
