@@ -43,13 +43,13 @@ export class EventListener {
     try {
       // Get environment from config
       const env = process.env.NODE_ENV || 'dev';
-      const tableSuffix = env === 'prod' ? '-prod-v5' : '';
+      const tableName = env === 'prod' ? 'ngu-points-core-v5-events-prod' : 'ngu-points-core-v5-events';
       
       this.logger.info('Starting event listener with config', {
         nftContractAddress: config.nftContractAddress,
         wsRpcUrl: config.wsRpcUrl,
         kinesisStreamName: config.kinesisStreamName,
-        dynamoTableName: `${config.kinesisStreamName}${tableSuffix}-events`,
+        dynamoTableName: tableName,
         wsConfig: {
           maxReconnectAttempts: this.maxReconnectAttempts,
           baseReconnectDelay: this.baseReconnectDelay,
@@ -262,8 +262,7 @@ export class EventListener {
     try {
       const eventId = `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`;
       const env = process.env.NODE_ENV || 'dev';
-      const tableSuffix = env === 'prod' ? '-prod-v5' : '';
-      const tableName = `${this.config.kinesisStreamName}${tableSuffix}-events`;
+      const tableName = env === 'prod' ? 'ngu-points-core-v5-events-prod' : 'ngu-points-core-v5-events';
       
       // Check if event has already been processed
       try {
