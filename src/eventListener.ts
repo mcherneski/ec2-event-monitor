@@ -43,13 +43,15 @@ export class EventListener {
     try {
       // Get environment from config
       const env = process.env.NODE_ENV || 'dev';
-      const tableName = env === 'prod' ? 'ngu-points-core-v5-events-prod' : 'ngu-points-core-v5-events';
+      const tokensTableName = env === 'prod' ? 'ngu-points-core-v5-tokens-prod' : 'ngu-points-core-v5-tokens';
+      const pointsTableName = env === 'prod' ? 'ngu-points-core-v5-points-prod' : 'ngu-points-core-v5-points';
       
       this.logger.info('Starting event listener with config', {
         nftContractAddress: config.nftContractAddress,
         wsRpcUrl: config.wsRpcUrl,
         kinesisStreamName: config.kinesisStreamName,
-        dynamoTableName: tableName,
+        tokensTableName,
+        pointsTableName,
         wsConfig: {
           maxReconnectAttempts: this.maxReconnectAttempts,
           baseReconnectDelay: this.baseReconnectDelay,
@@ -262,26 +264,27 @@ export class EventListener {
     try {
       const eventId = `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`;
       const env = process.env.NODE_ENV || 'dev';
-      const tableName = env === 'prod' ? 'ngu-points-core-v5-events-prod' : 'ngu-points-core-v5-events';
+      const tokensTableName = env === 'prod' ? 'ngu-points-core-v5-tokens-prod' : 'ngu-points-core-v5-tokens';
+      const pointsTableName = env === 'prod' ? 'ngu-points-core-v5-points-prod' : 'ngu-points-core-v5-points';
       
       // Check if event has already been processed
       try {
         const existingEvent = await this.dynamoDb.get({
-          TableName: tableName,
+          TableName: tokensTableName,
           Key: { eventId }
         });
 
         if (existingEvent.Item) {
           this.logger.info('Event already processed, skipping', { 
             eventId,
-            tableName 
+            tableName: tokensTableName
           });
           return;
         }
       } catch (error: any) {
         if (error?.name === 'AccessDeniedException') {
           this.logger.error('DynamoDB access denied', {
-            tableName,
+            tableName: tokensTableName,
             error: error.message,
             action: 'GetItem'
           });
@@ -383,7 +386,7 @@ export class EventListener {
         }
       }
 
-      // Send to Kinesis
+      // Send to Kinesis for event streaming
       const result = await this.kinesis.send(new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
         Data: Buffer.from(JSON.stringify(eventPayload)),
@@ -397,26 +400,46 @@ export class EventListener {
         sequenceNumber: result.SequenceNumber
       });
 
-      // Store event ID in DynamoDB for deduplication
-      try {
-        await this.dynamoDb.put({
-          TableName: tableName,
-          Item: {
+      // Update token ownership in DynamoDB
+      if (['BatchMint', 'BatchTransfer', 'BatchBurn'].includes(eventPayload.type)) {
+        try {
+          // Token table updates will be handled by the specific event handlers
+          this.logger.info('Token event processed', {
             eventId,
             eventType: eventPayload.type,
-            processedAt: Date.now(),
-            ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hour TTL
-          }
-        });
-      } catch (error: any) {
-        if (error?.name === 'AccessDeniedException') {
-          this.logger.error('DynamoDB access denied', {
-            tableName,
-            error: error.message,
-            action: 'PutItem'
+            table: tokensTableName
           });
+        } catch (error: any) {
+          if (error?.name === 'AccessDeniedException') {
+            this.logger.error('DynamoDB access denied', {
+              tableName: tokensTableName,
+              error: error.message,
+              action: 'UpdateItem'
+            });
+          }
+          throw error;
         }
-        throw error;
+      }
+
+      // Update points in DynamoDB
+      if (['Stake', 'Unstake'].includes(eventPayload.type)) {
+        try {
+          // Points updates will be handled by the specific event handlers
+          this.logger.info('Points event processed', {
+            eventId,
+            eventType: eventPayload.type,
+            table: pointsTableName
+          });
+        } catch (error: any) {
+          if (error?.name === 'AccessDeniedException') {
+            this.logger.error('DynamoDB access denied', {
+              tableName: pointsTableName,
+              error: error.message,
+              action: 'UpdateItem'
+            });
+          }
+          throw error;
+        }
       }
 
       this.logger.info('Event processed successfully', {
