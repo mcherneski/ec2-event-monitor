@@ -135,66 +135,83 @@ export class EventListener {
 
       // Initialize provider with a dummy WebSocket first
       this.provider = new WebSocketProvider(
-        () => new WebSocket(this.config.wsRpcUrl),
+        () => {
+          const ws = new WebSocket(this.config.wsRpcUrl) as WebSocket & { on: Function };
+          
+          // Add error handler before connection
+          ws.on('error', (error: any) => {
+            if (error.message?.includes('429')) {
+              this.logger.warn('Rate limit hit, increasing backoff', {
+                attempt: this.reconnectAttempts,
+                error: error.message
+              });
+              // Double the base delay on rate limit
+              this.baseReconnectDelay = Math.min(this.maxReconnectDelay, this.baseReconnectDelay * 2);
+            }
+          });
+
+          return ws;
+        },
         "base",
-        { staticNetwork: true, batchMaxCount: 1 }
+        { 
+          staticNetwork: true, 
+          batchMaxCount: 1,
+          // Disable automatic polling of new blocks
+          polling: false
+        }
       );
+
+      // Add connection state handler
+      if (this.provider.websocket) {
+        (this.provider.websocket as WebSocket & { on: Function }).on('close', (code: number, reason: string) => {
+          this.logger.warn('WebSocket connection closed', {
+            code,
+            reason: reason.toString(),
+            attempt: this.reconnectAttempts
+          });
+          
+          if (code === 429) {
+            // Rate limited - increase backoff
+            this.baseReconnectDelay = Math.min(this.maxReconnectDelay, this.baseReconnectDelay * 2);
+          }
+          
+          this.cleanup();
+          this.wsInitializing = false;
+          this.reconnect();
+        });
+      }
 
       this.nftContract = new Contract(this.config.nftContractAddress, EVENT_ABIS, this.provider);
 
-      // Set up event listeners
-      this.nftContract.on('BatchMint', async (event: any) => {
-        this.logger.info('BatchMint event received', {
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash
+      // Get current block for starting point
+      const currentBlock = await this.provider.getBlockNumber();
+      
+      // Set up event listeners for each event type
+      const eventNames = EVENT_ABIS.map(abi => abi.split('event ')[1].split('(')[0]);
+      
+      for (const eventName of eventNames) {
+        this.nftContract.on(eventName, async (...args: any[]) => {
+          // The last argument is the event object
+          const event = args[args.length - 1];
+          
+          this.logger.info(`${eventName} event received`, {
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash,
+            args: args.slice(0, -1).map(arg => 
+              typeof arg === 'bigint' ? arg.toString() : arg
+            )
+          });
+          
+          await this.handleEvent(event);
         });
-        await this.handleEvent(event);
-      });
-
-      this.nftContract.on('BatchBurn', async (event: any) => {
-        this.logger.info('BatchBurn event received', {
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash,
-          from: event.args?.from,
-          startTokenId: Number(event.args?.startTokenId),
-          quantity: Number(event.args?.quantity)
-        });
-        await this.handleEvent(event);
-      });
-
-      this.nftContract.on('BatchTransfer', async (event: any) => {
-        this.logger.info('BatchTransfer event received', {
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash,
-          from: event.args?.from,
-          to: event.args?.to,
-          startTokenId: Number(event.args?.startTokenId),
-          quantity: Number(event.args?.quantity)
-        });
-        await this.handleEvent(event);
-      });
-
-      this.nftContract.on('Stake', async (event: any) => {
-        this.logger.info('Stake event received', {
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash
-        });
-        await this.handleEvent(event);
-      });
-
-      this.nftContract.on('Unstake', async (event: any) => {
-        this.logger.info('Unstake event received', {
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash
-        });
-        await this.handleEvent(event);
-      });
+      }
 
       this.logger.info('Successfully subscribed to contract events', {
-        subscribedEvents: ['BatchMint', 'BatchBurn', 'BatchTransfer', 'Stake', 'Unstake']
+        subscribedEvents: eventNames,
+        startingBlock: currentBlock
       });
       
-      // Start heartbeat
+      // Start heartbeat with longer interval
       this.startHeartbeat();
       
       updateMetrics.updateWebsocket({
@@ -238,7 +255,7 @@ export class EventListener {
           ws.ping();
         }
       }
-    }, 30000); // Send ping every 30 seconds
+    }, 60000); // Increase ping interval to 60 seconds
   }
 
   private async handleEvent(event: any) {
@@ -452,6 +469,8 @@ export class EventListener {
         this.isCircuitBreakerOpen = false;
         this.reconnectAttempts = 0;
         this.lastCircuitBreakerReset = Date.now();
+        // Reset base delay when circuit breaker resets
+        this.baseReconnectDelay = parseInt(process.env.WS_RECONNECT_DELAY || '5000');
       } else {
         this.logger.warn('Circuit breaker is open, skipping reconnection attempt', {
           timeUntilReset: this.circuitBreakerTimeout - (Date.now() - this.lastCircuitBreakerReset)
@@ -475,17 +494,22 @@ export class EventListener {
       
       // Instead of exiting, sleep for a longer period
       const cooldownPeriod = 300000; // 5 minutes
-      this.logger.info(`Entering cooldown period for ${cooldownPeriod}ms`);
+      this.logger.info(`Entering cooldown period for ${cooldownPeriod}ms`, {
+        baseDelay: this.baseReconnectDelay,
+        attempts: this.reconnectAttempts
+      });
       await new Promise(resolve => setTimeout(resolve, cooldownPeriod));
       
       // Reset reconnection attempts and try again
       this.reconnectAttempts = 0;
       this.isCircuitBreakerOpen = false;
       this.lastCircuitBreakerReset = Date.now();
+      // Reset base delay after cooldown
+      this.baseReconnectDelay = parseInt(process.env.WS_RECONNECT_DELAY || '5000');
       return this.reconnect();
     }
 
-    // Exponential backoff with jitter for rate limiting
+    // Exponential backoff with full jitter for rate limiting
     const baseDelay = this.baseReconnectDelay;
     const maxDelay = this.maxReconnectDelay;
     const attempt = this.reconnectAttempts;
@@ -499,7 +523,8 @@ export class EventListener {
       calculatedDelay: expDelay,
       actualDelay: delay,
       maxAttempts: this.maxReconnectAttempts,
-      baseDelay: this.baseReconnectDelay
+      baseDelay: this.baseReconnectDelay,
+      currentMaxDelay: maxDelay
     });
 
     await new Promise(resolve => setTimeout(resolve, delay));
