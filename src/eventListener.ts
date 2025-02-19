@@ -262,36 +262,10 @@ export class EventListener {
 
   private async handleEvent(event: any) {
     try {
-      const eventId = `${event.blockNumber}-${event.transactionHash}-${event.logIndex}`;
       const env = process.env.NODE_ENV || 'dev';
       const tokensTableName = env === 'prod' ? 'ngu-points-core-v5-tokens-prod' : 'ngu-points-core-v5-tokens';
       const pointsTableName = env === 'prod' ? 'ngu-points-core-v5-points-prod' : 'ngu-points-core-v5-points';
       
-      // Check if event has already been processed
-      try {
-        const existingEvent = await this.dynamoDb.get({
-          TableName: tokensTableName,
-          Key: { eventId }
-        });
-
-        if (existingEvent.Item) {
-          this.logger.info('Event already processed, skipping', { 
-            eventId,
-            tableName: tokensTableName
-          });
-          return;
-        }
-      } catch (error: any) {
-        if (error?.name === 'AccessDeniedException') {
-          this.logger.error('DynamoDB access denied', {
-            tableName: tokensTableName,
-            error: error.message,
-            action: 'GetItem'
-          });
-        }
-        throw error;
-      }
-
       // Create the appropriate event payload based on event type
       let eventPayload: OnChainEvent;
       const receipt = await event.getTransactionReceipt();
@@ -380,7 +354,7 @@ export class EventListener {
         default: {
           this.logger.warn('Unknown event type received', {
             eventName: event.fragment.name,
-            eventId
+            transactionHash: event.transactionHash
           });
           return;
         }
@@ -390,11 +364,11 @@ export class EventListener {
       const result = await this.kinesis.send(new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
         Data: Buffer.from(JSON.stringify(eventPayload)),
-        PartitionKey: eventId
+        PartitionKey: event.transactionHash
       }));
 
       this.logger.info('Event sent to Kinesis', {
-        eventId,
+        transactionHash: event.transactionHash,
         eventType: eventPayload.type,
         shardId: result.ShardId,
         sequenceNumber: result.SequenceNumber
@@ -404,8 +378,9 @@ export class EventListener {
       if (['BatchMint', 'BatchTransfer', 'BatchBurn'].includes(eventPayload.type)) {
         try {
           // Token table updates will be handled by the specific event handlers
+          // They will use the correct key schema (id: Number)
           this.logger.info('Token event processed', {
-            eventId,
+            transactionHash: event.transactionHash,
             eventType: eventPayload.type,
             table: tokensTableName
           });
@@ -425,8 +400,9 @@ export class EventListener {
       if (['Stake', 'Unstake'].includes(eventPayload.type)) {
         try {
           // Points updates will be handled by the specific event handlers
+          // They will use the correct key schema (address: String)
           this.logger.info('Points event processed', {
-            eventId,
+            transactionHash: event.transactionHash,
             eventType: eventPayload.type,
             table: pointsTableName
           });
@@ -443,7 +419,7 @@ export class EventListener {
       }
 
       this.logger.info('Event processed successfully', {
-        eventId,
+        transactionHash: event.transactionHash,
         eventType: eventPayload.type
       });
     } catch (error) {
