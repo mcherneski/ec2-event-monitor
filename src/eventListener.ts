@@ -281,9 +281,9 @@ export class EventListener {
             quantity: Number(quantity),
             timestamp: block.timestamp,
             transactionHash: event.transactionHash,
-            blockNumber: receipt.blockNumber,
+            blockNumber: event.blockNumber,
             transactionIndex: receipt.index,
-            logIndex: event.index.toString(16)
+            logIndex: event.logIndex
           } as BatchMintEvent;
           await handleBatchMint(eventPayload, this.logger);
           break;
@@ -297,9 +297,9 @@ export class EventListener {
             quantity: Number(quantity),
             timestamp: block.timestamp,
             transactionHash: event.transactionHash,
-            blockNumber: receipt.blockNumber,
+            blockNumber: event.blockNumber,
             transactionIndex: receipt.index,
-            logIndex: event.index.toString(16)
+            logIndex: event.logIndex
           } as BatchBurnEvent;
           await handleBatchBurn(eventPayload, this.logger);
           break;
@@ -314,9 +314,9 @@ export class EventListener {
             quantity: Number(quantity),
             timestamp: block.timestamp,
             transactionHash: event.transactionHash,
-            blockNumber: receipt.blockNumber,
+            blockNumber: event.blockNumber,
             transactionIndex: receipt.index,
-            logIndex: event.index.toString(16)
+            logIndex: event.logIndex
           } as BatchTransferEvent;
           await handleBatchTransfer(eventPayload, this.logger);
           break;
@@ -329,9 +329,9 @@ export class EventListener {
             tokenId: Number(tokenId),
             timestamp: block.timestamp,
             transactionHash: event.transactionHash,
-            blockNumber: receipt.blockNumber,
+            blockNumber: event.blockNumber,
             transactionIndex: receipt.index,
-            logIndex: event.index.toString(16)
+            logIndex: event.logIndex
           } as StakeEvent;
           await handleStake(eventPayload, this.logger);
           break;
@@ -344,9 +344,9 @@ export class EventListener {
             tokenId: Number(tokenId),
             timestamp: block.timestamp,
             transactionHash: event.transactionHash,
-            blockNumber: receipt.blockNumber,
+            blockNumber: event.blockNumber,
             transactionIndex: receipt.index,
-            logIndex: event.index.toString(16)
+            logIndex: event.logIndex
           } as UnstakeEvent;
           await handleUnstake(eventPayload, this.logger);
           break;
