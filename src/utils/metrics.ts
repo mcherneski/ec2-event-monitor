@@ -1,27 +1,28 @@
-import { CloudWatch, Dimension, StandardUnit } from '@aws-sdk/client-cloudwatch';
-import type { MetricData } from '../types/events.js';
+import type { CloudWatchClient } from '@aws-sdk/client-cloudwatch/dist-types/CloudWatchClient';
+import { PutMetricDataCommand, StandardUnit } from '@aws-sdk/client-cloudwatch';
 
 export class MetricsPublisher {
-  private cloudwatch: CloudWatch;
-  private namespace: string;
+  private cloudwatch: CloudWatchClient;
 
-  constructor(region: string, namespace: string) {
-    this.cloudwatch = new CloudWatch({ region });
-    this.namespace = namespace;
+  constructor(cloudwatch: CloudWatchClient) {
+    this.cloudwatch = cloudwatch;
   }
 
-  async publishMetric(metric: MetricData) {
-    await this.cloudwatch.putMetricData({
-      Namespace: this.namespace,
-      MetricData: [{
+  async publishMetrics(metrics: Array<{
+    name: string;
+    value: number;
+    unit: keyof typeof StandardUnit;
+    dimensions?: Array<{ Name: string; Value: string; }>;
+  }>) {
+    await this.cloudwatch.send(new PutMetricDataCommand({
+      Namespace: 'NGU/EventMonitor',
+      MetricData: metrics.map(metric => ({
         MetricName: metric.name,
         Value: metric.value,
-        Unit: metric.unit as StandardUnit,
-        Dimensions: Object.entries(metric.dimensions || {}).map(([Name, Value]) => ({
-          Name,
-          Value: String(Value)
-        })) as Dimension[]
-      }]
-    });
+        Unit: StandardUnit[metric.unit],
+        Dimensions: metric.dimensions,
+        Timestamp: new Date()
+      }))
+    }));
   }
 } 

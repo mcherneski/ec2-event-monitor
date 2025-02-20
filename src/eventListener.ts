@@ -262,10 +262,6 @@ export class EventListener {
 
   private async handleEvent(event: any) {
     try {
-      const env = process.env.NODE_ENV || 'dev';
-      const tokensTableName = env === 'prod' ? 'ngu-points-core-v5-tokens-prod' : 'ngu-points-core-v5-tokens';
-      const pointsTableName = env === 'prod' ? 'ngu-points-core-v5-points-prod' : 'ngu-points-core-v5-points';
-      
       // Create the appropriate event payload based on event type
       let eventPayload: OnChainEvent;
       const receipt = await event.getTransactionReceipt();
@@ -285,7 +281,6 @@ export class EventListener {
             transactionIndex: receipt.index,
             logIndex: event.logIndex
           } as BatchMintEvent;
-          await handleBatchMint(eventPayload, this.logger);
           break;
         }
         case 'BatchBurn': {
@@ -301,7 +296,6 @@ export class EventListener {
             transactionIndex: receipt.index,
             logIndex: event.logIndex
           } as BatchBurnEvent;
-          await handleBatchBurn(eventPayload, this.logger);
           break;
         }
         case 'BatchTransfer': {
@@ -318,7 +312,6 @@ export class EventListener {
             transactionIndex: receipt.index,
             logIndex: event.logIndex
           } as BatchTransferEvent;
-          await handleBatchTransfer(eventPayload, this.logger);
           break;
         }
         case 'Stake': {
@@ -333,7 +326,6 @@ export class EventListener {
             transactionIndex: receipt.index,
             logIndex: event.logIndex
           } as StakeEvent;
-          await handleStake(eventPayload, this.logger);
           break;
         }
         case 'Unstake': {
@@ -348,7 +340,6 @@ export class EventListener {
             transactionIndex: receipt.index,
             logIndex: event.logIndex
           } as UnstakeEvent;
-          await handleUnstake(eventPayload, this.logger);
           break;
         }
         default: {
@@ -360,10 +351,22 @@ export class EventListener {
         }
       }
 
+      // Calculate queue order for proper event sequencing
+      const blockPart = event.blockNumber.toString().padStart(9, '0');
+      const txPart = event.transactionIndex.toString().padStart(6, '0');
+      const logPart = event.logIndex.toString().padStart(6, '0');
+      const queueOrder = `${blockPart}${txPart}${logPart}`;
+
+      // Enrich event with queue order
+      const enrichedPayload = {
+        ...eventPayload,
+        queueOrder
+      };
+
       // Send to Kinesis for event streaming
       const result = await this.kinesis.send(new PutRecordCommand({
         StreamName: this.config.kinesisStreamName,
-        Data: Buffer.from(JSON.stringify(eventPayload)),
+        Data: Buffer.from(JSON.stringify(enrichedPayload)),
         PartitionKey: event.transactionHash
       }));
 
@@ -371,57 +374,10 @@ export class EventListener {
         transactionHash: event.transactionHash,
         eventType: eventPayload.type,
         shardId: result.ShardId,
-        sequenceNumber: result.SequenceNumber
+        sequenceNumber: result.SequenceNumber,
+        queueOrder
       });
 
-      // Update token ownership in DynamoDB
-      if (['BatchMint', 'BatchTransfer', 'BatchBurn'].includes(eventPayload.type)) {
-        try {
-          // Token table updates will be handled by the specific event handlers
-          // They will use the correct key schema (id: Number)
-          this.logger.info('Token event processed', {
-            transactionHash: event.transactionHash,
-            eventType: eventPayload.type,
-            table: tokensTableName
-          });
-        } catch (error: any) {
-          if (error?.name === 'AccessDeniedException') {
-            this.logger.error('DynamoDB access denied', {
-              tableName: tokensTableName,
-              error: error.message,
-              action: 'UpdateItem'
-            });
-          }
-          throw error;
-        }
-      }
-
-      // Update points in DynamoDB
-      if (['Stake', 'Unstake'].includes(eventPayload.type)) {
-        try {
-          // Points updates will be handled by the specific event handlers
-          // They will use the correct key schema (address: String)
-          this.logger.info('Points event processed', {
-            transactionHash: event.transactionHash,
-            eventType: eventPayload.type,
-            table: pointsTableName
-          });
-        } catch (error: any) {
-          if (error?.name === 'AccessDeniedException') {
-            this.logger.error('DynamoDB access denied', {
-              tableName: pointsTableName,
-              error: error.message,
-              action: 'UpdateItem'
-            });
-          }
-          throw error;
-        }
-      }
-
-      this.logger.info('Event processed successfully', {
-        transactionHash: event.transactionHash,
-        eventType: eventPayload.type
-      });
     } catch (error) {
       this.logger.error('Failed to process event', {
         error: error instanceof Error ? error.message : 'Unknown error',
